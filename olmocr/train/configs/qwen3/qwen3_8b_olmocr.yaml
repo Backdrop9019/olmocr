@@ -31,7 +31,7 @@ dataset:
         - name: ReformatLatexBoldItalic
         - name: DatasetTextRuleFilter
         - name: PDFRenderer
-          target_longest_image_dim: 1288 
+          target_longest_image_dim: 850 
         - name: RotationAugmentation
           probability: 0.02
         - name: NewYamlFinetuningPromptWithNoAnchoring
@@ -124,7 +124,7 @@ training:
 # Qwen3-VL settings (matching OlmOCR v0.4.0 - 1288 resolution)
 qwen3_settings:
   min_pixels: 262144        # 256 visual tokens (512x512)
-  max_pixels: 1638400       # 1600 visual tokens (1280x1280) - matching OlmOCR's 1288
+  max_pixels: 810000       # 1600 visual tokens (1280x1280) - matching OlmOCR's 1288
   merge_size: 2  # Vision patch merge size
   use_olmocr_pipeline: true
   model_type: qwen3

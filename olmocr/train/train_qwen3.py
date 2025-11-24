@@ -112,6 +112,16 @@ class Qwen3ModelArguments(ModelArguments):
     double_quant: bool = field(default=True)
     quant_type: str = field(default="nf4")
 
+    # Model loading configuration
+    torch_dtype: str = field(
+        default="bfloat16",
+        metadata={"help": "Torch dtype for model: bfloat16, float16, float32"}
+    )
+    attn_implementation: str = field(
+        default="flash_attention_2",
+        metadata={"help": "Attention implementation to use"}
+    )
+
 
 @dataclass
 class Qwen3DataArguments(DataArguments):
@@ -400,14 +410,30 @@ def load_qwen3_model(model_args: Qwen3ModelArguments, training_args: TrainingArg
     else:
         logger.info("Quantization: None (full precision)")
 
-    # Load model with flash attention (REQUIRED)
-    attn_impl = "flash_attention_2"
-    torch_dtype = torch.bfloat16
+    # Load model with configured attention implementation and dtype
+    # Get attention implementation from config (default to flash_attention_2)
+    attn_impl = getattr(model_args, 'attn_implementation', 'flash_attention_2')
 
-    logger.info(f"Loading model...")
-    logger.info(f"  - Model: {model_args.model_name_or_path}")
+    # Get torch dtype from config (default to bfloat16)
+    dtype_str = getattr(model_args, 'torch_dtype', 'bfloat16')
+    if dtype_str == 'bfloat16':
+        torch_dtype = torch.bfloat16
+    elif dtype_str == 'float16':
+        torch_dtype = torch.float16
+    elif dtype_str == 'float32':
+        torch_dtype = torch.float32
+    else:
+        logger.warning(f"Unknown torch_dtype: {dtype_str}, using bfloat16")
+        torch_dtype = torch.bfloat16
+
+    logger.info(f"Model configuration from config:")
     logger.info(f"  - Attention: {attn_impl}")
-    logger.info(f"  - Dtype: {torch_dtype}")
+    logger.info(f"  - Dtype: {dtype_str} ({torch_dtype})")
+
+    # Check if flash attention is requested and warn if not
+    use_flash = getattr(training_args, 'use_flash_attention', True)
+    if use_flash and attn_impl != "flash_attention_2":
+        logger.warning(f"use_flash_attention=True but attn_implementation={attn_impl}")
 
     try:
         model = model_cls.from_pretrained(
@@ -416,15 +442,17 @@ def load_qwen3_model(model_args: Qwen3ModelArguments, training_args: TrainingArg
             quantization_config=bnb_config,
             trust_remote_code=True,
             attn_implementation=attn_impl,
+            cache_dir=training_args.cache_dir if hasattr(training_args, 'cache_dir') else None,
         )
     except Exception as e:
         logger.error("="*80)
-        logger.error("FAILED TO LOAD MODEL WITH FLASH ATTENTION!")
+        logger.error(f"FAILED TO LOAD MODEL WITH {attn_impl.upper()}!")
         logger.error(f"Error: {e}")
-        logger.error("Flash Attention 2 is REQUIRED for this training.")
-        logger.error("Please ensure flash-attn is installed: pip install flash-attn")
+        if "flash" in attn_impl.lower():
+            logger.error("Flash Attention 2 is configured but failed to initialize.")
+            logger.error("Please ensure flash-attn is installed: pip install flash-attn")
         logger.error("="*80)
-        raise RuntimeError("Flash Attention 2 is required but failed to initialize") from e
+        raise RuntimeError(f"Failed to load model with {attn_impl}") from e
 
     # Verify flash attention is actually being used
     logger.info(f"✓ Model loaded successfully")
@@ -437,7 +465,7 @@ def load_qwen3_model(model_args: Qwen3ModelArguments, training_args: TrainingArg
         logger.info(f"  - Attention implementation: {actual_attn}")
         if actual_attn != attn_impl:
             logger.error("="*80)
-            logger.error(f"FLASH ATTENTION NOT APPLIED!")
+            lo = torch.bfloat16gger.error(f"FLASH ATTENTION NOT APPLIED!")
             logger.error(f"Requested: {attn_impl}, Got: {actual_attn}")
             logger.error("Training cannot proceed without flash attention.")
             logger.error("="*80)
@@ -670,9 +698,17 @@ def main():
     if hasattr(olmocr_config, 'model'):
         model_args.model_name_or_path = olmocr_config.model.name
 
-        for attr in ['tune_mm_llm', 'tune_mm_mlp', 'tune_mm_vision']:
+        # Copy all relevant model attributes
+        for attr in ['tune_mm_llm', 'tune_mm_mlp', 'tune_mm_vision',
+                    'torch_dtype', 'attn_implementation']:
             if hasattr(olmocr_config.model, attr):
                 setattr(model_args, attr, getattr(olmocr_config.model, attr))
+                logger.info(f"  Set model_args.{attr} = {getattr(olmocr_config.model, attr)}")
+
+        # Copy use_flash_attention to training_args instead
+        if hasattr(olmocr_config.model, 'use_flash_attention'):
+            setattr(training_args, 'use_flash_attention', olmocr_config.model.use_flash_attention)
+            logger.info(f"  Set training_args.use_flash_attention = {olmocr_config.model.use_flash_attention}")
 
     # Override data settings from qwen3_settings (auto-copy matching fields)
     if hasattr(olmocr_config, 'qwen3_settings'):
