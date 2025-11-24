@@ -102,13 +102,14 @@ class PipelineStep(ABC):
 class BaseMarkdownPDFDataset(Dataset):
     """Base dataset class that loads and verifies markdown-PDF pairs."""
 
-    def __init__(self, root_dir: str | PathLike, pipeline_steps: Optional[List[PipelineStep]] = None):
+    def __init__(self, root_dir: str | PathLike, pipeline_steps: Optional[List[PipelineStep]] = None, skip_validation: bool = False):
         """
         Initialize the dataset by finding all markdown files with corresponding PDFs.
 
         Args:
             root_dir: Path to the root folder containing processed markdown and PDF files
             pipeline_steps: Optional list of pipeline steps to apply to each sample
+            skip_validation: If True, skip PDF validation and assume all PDFs are valid
         """
         self.root_dir = Path(root_dir)
         self.pipeline_steps = pipeline_steps or []
@@ -118,47 +119,75 @@ class BaseMarkdownPDFDataset(Dataset):
         logger.info(f"Scanning for markdown files in {self.root_dir}...")
         md_files = list(self.root_dir.rglob("*.md"))
 
-        # Verify each markdown file has a corresponding PDF using ProcessPoolExecutor
-        valid_count = 0
-        invalid_pdfs = []
+        if skip_validation:
+            # Skip validation - just check if PDF exists
+            logger.info(f"PDF validation SKIPPED (skip_validation=True)")
+            logger.info(f"Checking existence of {len(md_files)} PDF files...")
 
-        logger.info(f"Validating {len(md_files)} markdown-PDF pairs using ProcessPoolExecutor...")
+            valid_count = 0
+            missing_pdfs = []
 
-        # Use ProcessPoolExecutor for parallel validation
-        with ProcessPoolExecutor(max_workers=8) as executor:
-            # Submit all validation tasks
-            future_to_md = {executor.submit(validate_pdf_pair, md_path): md_path for md_path in md_files}
+            for md_path in tqdm(md_files, desc="Checking PDF existence (no validation)"):
+                pdf_path = md_path.with_suffix(".pdf")
 
-            # Process results as they complete
-            with tqdm(total=len(md_files), desc="Validating PDFs") as pbar:
-                for future in as_completed(future_to_md):
-                    md_path = future_to_md[future]
-                    try:
-                        valid_sample, invalid_pdf_info = future.result()
+                # Handle symlinks
+                if pdf_path.is_symlink():
+                    pdf_path = pdf_path.resolve()
 
-                        if valid_sample:
-                            self.samples.append(valid_sample)
-                            valid_count += 1
-                        elif invalid_pdf_info:
-                            invalid_pdfs.append(invalid_pdf_info)
+                if pdf_path.exists():
+                    self.samples.append({"markdown_path": md_path, "pdf_path": pdf_path})
+                    valid_count += 1
+                else:
+                    missing_pdfs.append(pdf_path)
 
-                    except Exception as e:
-                        logger.error(f"Error processing {md_path}: {str(e)}")
-                        invalid_pdfs.append((md_path.with_suffix(".pdf"), f"Processing error: {str(e)}"))
+            if missing_pdfs:
+                logger.warning(f"{len(missing_pdfs)} missing PDFs:")
+                for pdf_path in missing_pdfs[:5]:
+                    logger.warning(f"  - {pdf_path.name}")
+                if len(missing_pdfs) > 5:
+                    logger.warning(f"  ... and {len(missing_pdfs) - 5} more")
+        else:
+            # Original validation logic
+            valid_count = 0
+            invalid_pdfs = []
 
-                    pbar.update(1)
+            logger.info(f"Validating {len(md_files)} markdown-PDF pairs using ProcessPoolExecutor...")
+
+            # Use ProcessPoolExecutor for parallel validation
+            with ProcessPoolExecutor(max_workers=8) as executor:
+                # Submit all validation tasks
+                future_to_md = {executor.submit(validate_pdf_pair, md_path): md_path for md_path in md_files}
+
+                # Process results as they complete
+                with tqdm(total=len(md_files), desc="Validating PDFs") as pbar:
+                    for future in as_completed(future_to_md):
+                        md_path = future_to_md[future]
+                        try:
+                            valid_sample, invalid_pdf_info = future.result()
+
+                            if valid_sample:
+                                self.samples.append(valid_sample)
+                                valid_count += 1
+                            elif invalid_pdf_info:
+                                invalid_pdfs.append(invalid_pdf_info)
+
+                        except Exception as e:
+                            logger.error(f"Error processing {md_path}: {str(e)}")
+                            invalid_pdfs.append((md_path.with_suffix(".pdf"), f"Processing error: {str(e)}"))
+
+                        pbar.update(1)
+
+            if invalid_pdfs:
+                logger.warning(f"{len(invalid_pdfs)} invalid PDFs found:")
+                for pdf_path, reason in invalid_pdfs[:5]:  # Show first 5
+                    logger.warning(f"  - {pdf_path.name}: {reason}")
+                if len(invalid_pdfs) > 5:
+                    logger.warning(f"  ... and {len(invalid_pdfs) - 5} more")
 
         # Sort samples by markdown path for consistent ordering across runs
         self.samples.sort(key=lambda x: x["markdown_path"])
 
         logger.info(f"Found {valid_count} valid markdown-PDF pairs")
-
-        if invalid_pdfs:
-            logger.warning(f"{len(invalid_pdfs)} invalid PDFs found:")
-            for pdf_path, reason in invalid_pdfs[:5]:  # Show first 5
-                logger.warning(f"  - {pdf_path.name}: {reason}")
-            if len(invalid_pdfs) > 5:
-                logger.warning(f"  ... and {len(invalid_pdfs) - 5} more")
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -772,8 +801,12 @@ class DatasetTextRuleFilter(PipelineStep):
 
             # All equations rendered successfully
             return True
+        except ImportError as e:
+            # playwright or katex renderer not available - skip validation
+            logger.debug(f"Math equation validation library not available ({e}), skipping validation")
+            return True  # Allow sample to pass if validation library not available
         except Exception as e:
-            # If any unexpected error occurs during validation, be conservative and filter out
+            # Other unexpected errors - be conservative and filter out
             print(f"Error validating math equations: {e}")
             return False
 

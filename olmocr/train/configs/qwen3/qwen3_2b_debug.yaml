@@ -1,0 +1,113 @@
+# Qwen3-VL 2B Debug Configuration
+# OlmOCR v0.4.0 레시피 기반 - 빠른 디버깅용
+
+project_name: olmocr-qwen3-debug
+run_name: qwen3-2b-debug
+
+# Model configuration
+model:
+  name: Qwen/Qwen3-VL-2B-Instruct
+  trust_remote_code: true
+  torch_dtype: bfloat16
+  use_flash_attention: true
+  attn_implementation: flash_attention_2
+
+  # Qwen3-VL 학습 제어
+  tune_mm_llm: true
+  tune_mm_mlp: true
+  tune_mm_vision: false
+
+  use_lora: false
+
+# Dataset configuration - 디버깅용 작은 데이터셋
+dataset:
+  train:
+    - name: processed_03_national_archives_eval
+      root_dir: /home/kyungho/frameworks/data/olmOCR-mix-1025/processed_03_national_archives_eval/
+      pipeline: &debug_pipeline
+        - name: FrontMatterParser
+          front_matter_class: PageResponse
+        - name: FilterOutRotatedDocuments
+        - name: ReformatLatexBoldItalic
+        - name: DatasetTextRuleFilter
+        - name: PDFRenderer
+          target_longest_image_dim: 672  # 메모리 절약 (1024 → 672)
+        - name: RotationAugmentation
+          probability: 0.01  # 디버깅용 낮은 확률
+        - name: NewYamlFinetuningPromptWithNoAnchoring
+        - name: FrontMatterOutputFormat
+        - name: InstructUserMessages
+          prompt_first: true
+        - name: Tokenizer
+          masking_index: -100
+          end_of_message_token: "<|im_end|>"
+
+  eval:
+    - name: processed_03_national_archives_eval
+      root_dir: /home/kyungho/frameworks/data/olmOCR-mix-1025/processed_03_national_archives_eval/
+      pipeline: *debug_pipeline
+
+# Training configuration - 빠른 실행
+training:
+  output_dir: /home/kyungho/olmocr-qwen3-debug/
+  num_train_epochs: 1
+  max_steps: 20  # 디버깅용 제한
+
+  # Batch size - 메모리 절약을 위해 1로 설정
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  gradient_accumulation_steps: 2  # 효과적 배치=8 유지
+
+  gradient_checkpointing: true  # 메모리 절약 필수
+
+  model_max_length: 1024  # 메모리 절약을 위해 더 짧게
+  collator_max_token_len: 1024
+
+  # Dataset
+  dataloader_num_workers: 1
+  
+  # Learning rate
+  learning_rate: 5e-5  # 디버깅용 높게
+  lr_scheduler_type: constant
+  warmup_steps: 10
+
+  # Optimization
+  optim: adamw_torch
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+
+  # Mixed precision
+  bf16: true
+  fp16: false
+  tf32: true
+
+  # Torch compile - 디버깅시 끄기
+  torch_compile: false
+
+  seed: 42
+  data_seed: 42
+
+  # Evaluation - 자주
+  evaluation_strategy: steps
+  eval_steps: 20
+  save_strategy: steps
+  save_steps: 50
+  save_total_limit: 2
+
+  # Logging - 자주
+  logging_steps: 5
+  logging_first_step: true
+
+  report_to:
+    - wandb
+
+
+# Qwen3-VL settings (debug - low resolution for memory saving)
+qwen3_settings:
+  min_pixels: 784  # 28*28*1
+  max_pixels: 50176  # 28*28*64 (~224x224)
+  merge_size: 2  # Vision patch merge size
+  use_olmocr_pipeline: true
+  model_type: qwen3
+  include_metadata: false
+  # Note: PDFRenderer creates 672 images, Qwen processor resizes to ~224x224

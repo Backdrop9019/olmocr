@@ -186,6 +186,11 @@ class ModelConfig:
     freeze_vision_tower: bool = False
     freeze_language_model: bool = False
 
+    # Qwen3-VL 컴포넌트별 학습 제어 플래그
+    tune_mm_llm: Optional[bool] = None  # Train language model
+    tune_mm_mlp: Optional[bool] = None  # Train vision projector
+    tune_mm_vision: Optional[bool] = None  # Train vision encoder
+
     # LoRA configuration (optional)
     use_lora: bool = False
     lora_rank: int = 8
@@ -194,6 +199,11 @@ class ModelConfig:
     lora_target_modules: List[str] = field(default_factory=lambda: ["q_proj", "v_proj", "k_proj", "o_proj"])
     lora_modules_to_save: Optional[List[str]] = None
 
+    # Quantization (for Qwen3-VL compatibility)
+    quantization_bit: Optional[int] = None  # 4 or 8 for quantization
+    double_quant: bool = True
+    quant_type: str = "nf4"
+
 
 @dataclass
 class TrainingConfig:
@@ -201,6 +211,7 @@ class TrainingConfig:
 
     output_dir: str = "./outputs"
     num_train_epochs: int = 1
+    max_steps: int = -1  # -1 means use num_train_epochs instead
     per_device_train_batch_size: int = 1
     per_device_eval_batch_size: int = 1
     gradient_accumulation_steps: int = 8
@@ -209,6 +220,7 @@ class TrainingConfig:
     learning_rate: float = 2e-5
     lr_scheduler_type: str = "cosine"
     warmup_ratio: float = 0.1
+    warmup_steps: int = 0  # If > 0, overrides warmup_ratio
     lr_scheduler_kwargs: Dict[str, Any] = field(default_factory=dict)
 
     # Optimization
@@ -252,23 +264,63 @@ class TrainingConfig:
 
     # Performance
     dataloader_drop_last: bool = True
-    dataloader_num_workers: int = 16
+    dataloader_num_workers: int = 32
 
     # Data collator settings
     collator_max_token_len: Optional[int] = None
-    remove_unused_columns: bool = False  # Important for custom datasets
+    model_max_length: int = 8192  # Maximum sequence length
 
-    # Torch compile settings
-    torch_compile: bool = False
-    torch_compile_backend: str = "inductor"  # "inductor", "aot_eager", "cudagraphs", etc.
-    torch_compile_mode: str = "default"  # "default", "reduce-overhead", "max-autotune"
-    torch_compile_fullgraph: bool = False
-    torch_compile_dynamic: bool = False
+    # Qwen3-VL specific learning rates
+    mm_projector_lr: Optional[float] = None  # Vision projector learning rate
+    vision_tower_lr: Optional[float] = None  # Vision encoder learning rate
+    lora_lr: Optional[float] = None  # LoRA adapter learning rate
+
+    # Mixed precision settings
+    bf16: bool = True
+    fp16: bool = False
+    tf32: bool = True
+
+    # DeepSpeed configuration
+    deepspeed: Optional[str] = None  # Path to DeepSpeed config JSON
+
+    # Additional settings for HF Trainer compatibility
+    remove_unused_columns: bool = False
+    dataloader_pin_memory: bool = True
+    eval_accumulation_steps: Optional[int] = None
+    save_only_model: bool = False
+    save_safetensors: bool = True
+    resume_from_checkpoint: Optional[str] = None
+    early_stopping_patience: Optional[int] = None
+    early_stopping_threshold: Optional[float] = None
 
     # Early stopping
     use_early_stopping: bool = False
     early_stopping_patience: int = 3
     early_stopping_threshold: float = 0.0
+
+
+@dataclass
+class Qwen3Settings:
+    """Qwen3-VL specific settings."""
+
+    # Image processing (OlmOCR v0.4.0 - 1288 resolution)
+    min_pixels: int = 12544  # 28*28*16
+    max_pixels: int = 1658944  # 1288*1288 (OlmOCR uses 1288 images)
+
+    # Vision model settings
+    merge_size: int = 2  # Patch merge size
+
+    # Data format
+    use_olmocr_pipeline: bool = True  # Use OlmOCR data pipeline
+
+    # Model selection
+    model_type: str = "qwen3"  # qwen2, qwen2.5, or qwen3
+
+    # Include metadata in prompts (OlmOCR는 사용하지 않음)
+    include_metadata: bool = False
+
+    # Performance settings
+    skip_validation: bool = False  # Skip PDF validation for faster startup
 
 
 @dataclass
@@ -278,6 +330,7 @@ class Config:
     model: ModelConfig
     dataset: DatasetConfig
     training: TrainingConfig
+    qwen3_settings: Optional[Qwen3Settings] = None  # Optional Qwen3-VL settings
 
     # Environment
     project_name: str = "olmocr-training"
@@ -319,10 +372,15 @@ class Config:
         dataset_cfg = DatasetConfig(**cfg_dict.get("dataset", {}))
         training_cfg = TrainingConfig(**cfg_dict.get("training", {}))
 
-        # Create main config
-        main_cfg_dict = {k: v for k, v in cfg_dict.items() if k not in ["model", "dataset", "training"]}
+        # Create Qwen3Settings if present
+        qwen3_settings = None
+        if "qwen3_settings" in cfg_dict:
+            qwen3_settings = Qwen3Settings(**cfg_dict.get("qwen3_settings", {}))
 
-        return cls(model=model_cfg, dataset=dataset_cfg, training=training_cfg, **main_cfg_dict)
+        # Create main config
+        main_cfg_dict = {k: v for k, v in cfg_dict.items() if k not in ["model", "dataset", "training", "qwen3_settings"]}
+
+        return cls(model=model_cfg, dataset=dataset_cfg, training=training_cfg, qwen3_settings=qwen3_settings, **main_cfg_dict)
 
     def to_yaml(self, yaml_path: str | Path) -> None:
         """Save configuration to YAML file."""

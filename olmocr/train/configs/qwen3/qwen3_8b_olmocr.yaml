@@ -1,0 +1,134 @@
+# Qwen3-VL 8B Production Configuration
+# OlmOCR v0.4.0 레시피 기반 (qwen25_vl_olmocrv4_rotation_1epoch_mix_1025_filtered.yaml)
+
+project_name: olmocr-qwen3-training
+run_name: qwen3-8b-olmocrv4-1epoch
+
+# Model configuration
+model:
+  name: Qwen/Qwen3-VL-8B-Instruct
+  trust_remote_code: true
+  torch_dtype: bfloat16
+  use_flash_attention: true
+  attn_implementation: flash_attention_2
+
+  # Qwen3-VL 학습 제어
+  tune_mm_llm: true
+  tune_mm_mlp: true
+  tune_mm_vision: false
+
+  use_lora: false
+
+# Dataset configuration - OlmOCR v0.4.0과 동일
+dataset:
+  train:
+    - name: processed_01_books_train
+      root_dir: /home/kyungho/frameworks/data/olmOCR-mix-1025/processed_01_books_train/
+      pipeline: &basic_pipeline
+        - name: FrontMatterParser
+          front_matter_class: PageResponse
+        - name: FilterOutRotatedDocuments
+        - name: ReformatLatexBoldItalic
+        - name: DatasetTextRuleFilter
+        - name: PDFRenderer
+          target_longest_image_dim: 1288 
+        - name: RotationAugmentation
+          probability: 0.02
+        - name: NewYamlFinetuningPromptWithNoAnchoring
+        - name: FrontMatterOutputFormat
+        - name: InstructUserMessages
+          prompt_first: true
+        - name: Tokenizer
+          masking_index: -100
+          end_of_message_token: "<|im_end|>"
+    - name: processed_00_documents_train
+      root_dir: /home/kyungho/frameworks/data/olmOCR-mix-1025/processed_00_documents_train/
+      pipeline: *basic_pipeline
+    - name: processed_02_loc_transcripts_train
+      root_dir: /home/kyungho/frameworks/data/olmOCR-mix-1025/processed_02_loc_transcripts_train/
+      pipeline: *basic_pipeline
+    - name: processed_03_national_archives_train
+      root_dir: /home/kyungho/frameworks/data/olmOCR-mix-1025/processed_03_national_archives_train/
+      pipeline: *basic_pipeline
+
+  eval:
+    - name: processed_00_documents_eval
+      root_dir: /home/kyungho/frameworks/data/olmOCR-mix-1025/processed_00_documents_eval/
+      pipeline: *basic_pipeline
+    - name: processed_01_books_eval
+      root_dir: /home/kyungho/frameworks/data/olmOCR-mix-1025/processed_01_books_eval/
+      pipeline: *basic_pipeline
+    - name: processed_02_loc_transcripts_eval
+      root_dir: /home/kyungho/frameworks/data/olmOCR-mix-1025/processed_02_loc_transcripts_eval/
+      pipeline: *basic_pipeline
+    - name: processed_03_national_archives_eval
+      root_dir: /home/kyungho/frameworks/data/olmOCR-mix-1025/processed_03_national_archives_eval/
+      pipeline: *basic_pipeline
+
+# Training configuration - OlmOCR v0.4.0과 동일
+training:
+  output_dir: /home/kyungho/olmocr-qwen3-8b/
+  num_train_epochs: 1
+
+  # Batch size and accumulation
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  gradient_accumulation_steps: 2
+
+  gradient_checkpointing: true
+
+  model_max_length: 8192
+  collator_max_token_len: 8192
+
+  # Dataset
+  dataloader_num_workers: 4
+
+  # Learning rate
+  learning_rate: 2e-5
+  lr_scheduler_type: linear
+  warmup_ratio: 0.1
+
+  # Optimization
+  optim: adamw_torch
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+
+  # Mixed precision
+  bf16: true
+  fp16: false
+  tf32: true
+
+  seed: 300
+  data_seed: 301
+
+  # Evaluation and checkpointing
+  evaluation_strategy: steps
+  eval_steps: 500
+  save_strategy: steps
+  save_steps: 500
+  save_total_limit: 5
+  load_best_model_at_end: false
+  metric_for_best_model: eval_processed_00_documents_eval_loss
+  greater_is_better: false
+
+  # Logging
+  logging_steps: 10
+  logging_first_step: true
+
+  report_to:
+    - wandb
+
+  # DeepSpeed ZeRO-2 (or ZeRO-3 for memory constrained)
+  deepspeed: /home/kyungho/frameworks/olmocr/olmocr/train/configs/qwen3/zero3.json
+
+# Qwen3-VL settings (matching OlmOCR v0.4.0 - 1288 resolution)
+qwen3_settings:
+  min_pixels: 262144        # 256 visual tokens (512x512)
+  max_pixels: 1638400       # 1600 visual tokens (1280x1280) - matching OlmOCR's 1288
+  merge_size: 2  # Vision patch merge size
+  use_olmocr_pipeline: true
+  model_type: qwen3
+  include_metadata: false
+  skip_validation: true  # Skip PDF validation for faster startup (set to false for production)
+  # Note: PDFRenderer creates 1288 images, smart_resize rounds to 1280 (divisible by 32)
+  # Note: factor = patch_size(16) * merge_size(2) = 32
