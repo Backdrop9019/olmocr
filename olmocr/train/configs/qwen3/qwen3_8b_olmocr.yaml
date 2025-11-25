@@ -73,7 +73,7 @@ training:
   # Batch size and accumulation
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1
-  gradient_accumulation_steps: 2
+  gradient_accumulation_steps: 1
 
   gradient_checkpointing: true
 
@@ -119,12 +119,12 @@ training:
     - wandb
 
   # DeepSpeed ZeRO-2 (or ZeRO-3 for memory constrained)
-  deepspeed: /home/kyungho/frameworks/olmocr/olmocr/train/configs/qwen3/zero3.json
+  deepspeed: /home/kyungho/frameworks/olmocr/olmocr/train/configs/qwen3/zero2.json
 
 # Qwen3-VL settings (matching OlmOCR v0.4.0 - 1288 resolution)
 qwen3_settings:
-  min_pixels: 262144        # 256 visual tokens (512x512)
-  max_pixels: 810000       # 1600 visual tokens (1280x1280) - matching OlmOCR's 1288
+  min_pixels: 784        # 784  262144
+  max_pixels: 50176       #  50176  810000
   merge_size: 2  # Vision patch merge size
   use_olmocr_pipeline: true
   model_type: qwen3

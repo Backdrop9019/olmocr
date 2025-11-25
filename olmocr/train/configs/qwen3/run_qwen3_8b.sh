@@ -32,6 +32,9 @@ echo "Log file: ${LOG_FILE}"
 echo "Conda env: ${CONDA_DEFAULT_ENV}"
 echo "=========================================="
 
+# Get DeepSpeed config from YAML (parse it)
+DEEPSPEED_CONFIG="/home/kyungho/frameworks/olmocr/olmocr/train/configs/qwen3/zero2.json"
+
 # Run with nohup in background using torchrun
 nohup torchrun \
     --nproc_per_node=${NPROC_PER_NODE} \
@@ -39,6 +42,7 @@ nohup torchrun \
     --master_port=${MASTER_PORT} \
     ${SCRIPT_PATH} \
     --olmocr_config_path ${CONFIG_PATH} \
+    --deepspeed ${DEEPSPEED_CONFIG} \
     > "${LOG_FILE}" 2>&1 &
 
 # Save PID

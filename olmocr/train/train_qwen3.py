@@ -233,6 +233,9 @@ class OlmOCRQwen3DataCollator:
         images = []
         messages_list = []
 
+        # Log visual token calculation occasionally (every 100 batches)
+        should_log_tokens = (self.batch_count % 100 == 1)
+
         for idx, inst in enumerate(instances):
             image = inst.get("image")
             conversations = inst.get("conversations", [])
@@ -243,6 +246,21 @@ class OlmOCRQwen3DataCollator:
                 if hasattr(image, 'size'):
                     logger.info(f"  - Image size: {image.size}")
                 logger.info(f"  - Conversations: {len(conversations)} messages")
+
+            # Calculate visual tokens for first image in batch (for logging)
+            if should_log_tokens and idx == 0 and image and hasattr(image, 'size'):
+                width, height = image.size
+                # Qwen3-VL uses 32x32 patches (patch_size=16, merge_size=2)
+                patch_size = 32  # 16 * 2
+                visual_tokens = (width // patch_size) * (height // patch_size)
+                logger.info(f"="*80)
+                logger.info(f"VISUAL TOKEN CALCULATION (Batch {self.batch_count}):")
+                logger.info(f"  - Image size: {width}×{height} pixels")
+                logger.info(f"  - Total pixels: {width * height:,}")
+                logger.info(f"  - Patch size: {patch_size}×{patch_size}")
+                logger.info(f"  - Visual tokens: {visual_tokens} tokens")
+                logger.info(f"  - Tokens per image: {visual_tokens} (after merge_size=2)")
+                logger.info(f"="*80)
 
             if not conversations or len(conversations) < 2:
                 if verbose:
@@ -749,6 +767,14 @@ def main():
         field_name = field.name
         if hasattr(training_config, field_name):
             value = getattr(training_config, field_name)
+
+            # Special handling for deepspeed: CLI args take precedence
+            if field_name == 'deepspeed':
+                # If deepspeed was already set via CLI, don't override
+                if getattr(training_args, 'deepspeed', None) is not None:
+                    logger.info(f"  Keeping CLI deepspeed: {training_args.deepspeed}")
+                    continue
+
             # Only copy if value is not None and training_args has this field
             if value is not None and hasattr(training_args, field_name):
                 # Get the current value from training_args to infer the expected type
