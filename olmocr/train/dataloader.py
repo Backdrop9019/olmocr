@@ -202,18 +202,36 @@ class BaseMarkdownPDFDataset(Dataset):
                 - 'pdf_path': Path to the PDF file
 
             Additional fields will be added by pipeline steps.
-            Returns None if any pipeline step returns None.
+            If pipeline fails, tries another random sample (up to max_retries).
         """
-        # Start with basic sample info
-        sample = self.samples[idx].copy()
+        import random
+        max_retries = 10  # Prevent infinite loops
 
-        # Apply pipeline steps, returning None if any step returns None
-        for step in self.pipeline_steps:
-            sample = step(sample)
-            if sample is None:
-                return None
+        for attempt in range(max_retries):
+            # Use original idx on first attempt, then random
+            current_idx = idx if attempt == 0 else random.randint(0, len(self.samples) - 1)
 
-        return sample
+            # Start with basic sample info
+            sample = self.samples[current_idx].copy()
+
+            # Apply pipeline steps
+            failed = False
+            for step in self.pipeline_steps:
+                sample = step(sample)
+                if sample is None:
+                    failed = True
+                    break
+
+            if not failed and sample is not None:
+                return sample
+
+            # Log only on first failure (to avoid spam)
+            if attempt == 0:
+                logger.debug(f"Sample {idx} failed pipeline, trying another sample...")
+
+        # If all retries failed, log warning and return None
+        logger.warning(f"Failed to get valid sample after {max_retries} retries starting from idx {idx}")
+        return None
 
 
 @dataclass(frozen=True, slots=True)

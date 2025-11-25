@@ -31,7 +31,7 @@ dataset:
         - name: ReformatLatexBoldItalic
         - name: DatasetTextRuleFilter
         - name: PDFRenderer
-          target_longest_image_dim: 850 
+          target_longest_image_dim: 1288 
         - name: RotationAugmentation
           probability: 0.02
         - name: NewYamlFinetuningPromptWithNoAnchoring
@@ -73,12 +73,11 @@ training:
   # Batch size and accumulation
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1
-  gradient_accumulation_steps: 1
+  gradient_accumulation_steps: 2
 
   gradient_checkpointing: true
 
   model_max_length: 8192
-  collator_max_token_len: 8192
 
   # Dataset
   dataloader_num_workers: 4
@@ -118,13 +117,10 @@ training:
   report_to:
     - wandb
 
-  # DeepSpeed ZeRO-2 (or ZeRO-3 for memory constrained)
-  deepspeed: /home/kyungho/frameworks/olmocr/olmocr/train/configs/qwen3/zero2.json
-
 # Qwen3-VL settings (matching OlmOCR v0.4.0 - 1288 resolution)
 qwen3_settings:
-  min_pixels: 784        # 784  262144
-  max_pixels: 50176       #  50176  810000
+  min_pixels: 262144        # 784  262144
+  max_pixels: 1800000       #  50176  810000
   merge_size: 2  # Vision patch merge size
   use_olmocr_pipeline: true
   model_type: qwen3

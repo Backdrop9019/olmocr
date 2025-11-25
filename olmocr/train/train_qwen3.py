@@ -205,9 +205,10 @@ class OlmOCRQwen3DataCollator:
     Custom data collator that handles OlmOCR samples with Qwen3-VL
     """
 
-    def __init__(self, processor, merge_size=28):
+    def __init__(self, processor, merge_size=28, model_max_length=8192):
         self.processor = processor
         self.merge_size = merge_size
+        self.model_max_length = model_max_length
         self.batch_count = 0  # Track batches for logging
 
     def __call__(self, instances: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
@@ -226,8 +227,10 @@ class OlmOCRQwen3DataCollator:
             logger.info(f"After filtering: {len(instances)} valid instances")
 
         if not instances:
-            logger.debug(f"Batch {self.batch_count}: All instances filtered out, skipping")
-            return None  # Return None so QwenTrainer can skip this batch
+            logger.warning(f"Batch {self.batch_count}: All instances filtered out - this should be rare with retry logic")
+            # In DDP, returning None causes rank imbalance and NCCL timeout
+            # Return empty dict to signal skip, but QwenTrainer must handle this
+            return None
 
         # Extract images and convert conversations to Qwen3-VL format
         images = []
@@ -332,7 +335,8 @@ class OlmOCRQwen3DataCollator:
                 images=images,
                 return_tensors="pt",
                 padding=True,
-                truncation=True
+                truncation=True,
+                max_length=self.model_max_length
             )
 
             if verbose:
@@ -352,6 +356,14 @@ class OlmOCRQwen3DataCollator:
                         patches_before_merge = t * h * w
                         patches_after_merge = patches_before_merge // (self.merge_size ** 2)
                         logger.info(f"  - Image {i}: grid=({t},{h},{w}), patches_before={patches_before_merge}, patches_after={patches_after_merge}")
+
+            # Enforce max_length truncation (following Qwen official implementation)
+            input_ids = batch["input_ids"]
+            if input_ids.shape[1] > self.model_max_length:
+                logger.warning(f"Truncating sequence from {input_ids.shape[1]} to {self.model_max_length} tokens")
+                batch["input_ids"] = input_ids[:, :self.model_max_length]
+                if "attention_mask" in batch:
+                    batch["attention_mask"] = batch["attention_mask"][:, :self.model_max_length]
 
             # Add labels (same as input_ids for language modeling)
             batch["labels"] = batch["input_ids"].clone()
@@ -672,11 +684,15 @@ def create_olmocr_data_module(
     if hasattr(olmocr_config, 'qwen3_settings') and hasattr(olmocr_config.qwen3_settings, 'merge_size'):
         merge_size = olmocr_config.qwen3_settings.merge_size
 
+    # Get model_max_length from training_args
+    model_max_length = getattr(training_args, 'model_max_length', 8192)
+
     data_collator = OlmOCRQwen3DataCollator(
         processor=processor,
         merge_size=merge_size,
+        model_max_length=model_max_length,
     )
-    logger.info(f"✓ Data collator created (merge_size={merge_size})")
+    logger.info(f"✓ Data collator created (merge_size={merge_size}, model_max_length={model_max_length})")
     logger.info("="*80)
 
     return {
@@ -830,11 +846,17 @@ def main():
         if last_checkpoint is not None:
             logger.info(f"Checkpoint detected, resuming training from {last_checkpoint}")
 
-    # Load processor
+    # Load processor with model_max_length
     processor = AutoProcessor.from_pretrained(
         model_args.model_name_or_path,
         trust_remote_code=True
     )
+
+    # Set model_max_length on tokenizer (CRITICAL for truncation!)
+    if hasattr(processor, 'tokenizer') and hasattr(training_args, 'model_max_length'):
+        model_max_length = getattr(training_args, 'model_max_length', 8192)
+        processor.tokenizer.model_max_length = model_max_length
+        logger.info(f"✓ Set tokenizer.model_max_length = {model_max_length}")
 
     # Update processor with min/max pixels from data_args
     logger.info("="*80)
