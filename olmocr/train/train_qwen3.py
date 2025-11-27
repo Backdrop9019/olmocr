@@ -211,6 +211,13 @@ class OlmOCRQwen3DataCollator:
         self.model_max_length = model_max_length
         self.batch_count = 0  # Track batches for logging
 
+        # Get the token IDs for assistant response detection
+        # Qwen3 uses "<|im_start|>assistant\n" to mark assistant response start
+        self.assistant_start_tokens = self.processor.tokenizer.encode(
+            "<|im_start|>assistant\n", add_special_tokens=False
+        )
+        logger.info(f"Assistant start tokens: {self.assistant_start_tokens}")
+
     def __call__(self, instances: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
         self.batch_count += 1
         verbose = False  # Disabled - data loading is working fine now
@@ -365,10 +372,16 @@ class OlmOCRQwen3DataCollator:
                 if "attention_mask" in batch:
                     batch["attention_mask"] = batch["attention_mask"][:, :self.model_max_length]
 
-            # Add labels (same as input_ids for language modeling)
-            batch["labels"] = batch["input_ids"].clone()
+            # Add labels with proper masking (only compute loss on assistant response)
+            # This is critical! Without masking, the model tries to learn the prompt too,
+            # which prevents proper OCR response learning.
+            batch["labels"] = self._create_labels_with_masking(batch["input_ids"])
             if verbose:
                 logger.info(f"  - labels shape: {batch['labels'].shape}")
+                # Log masking stats
+                num_masked = (batch["labels"] == -100).sum().item()
+                num_total = batch["labels"].numel()
+                logger.info(f"  - labels masked: {num_masked}/{num_total} ({100*num_masked/num_total:.1f}%)")
 
             # Qwen3-VL model will calculate position IDs automatically
             # No need to manually compute them
@@ -382,6 +395,45 @@ class OlmOCRQwen3DataCollator:
             import traceback
             logger.error(traceback.format_exc())
             return {}
+
+    def _create_labels_with_masking(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """
+        Create labels with proper masking for training.
+
+        Only the assistant's response should contribute to the loss.
+        The prompt (system, user message, image tokens) should be masked with -100.
+
+        This matches OlmOCR's original Tokenizer pipeline step behavior.
+        """
+        labels = input_ids.clone()
+        batch_size, seq_len = input_ids.shape
+
+        # Find "<|im_start|>assistant\n" in each sequence and mask everything before it
+        assistant_tokens = torch.tensor(self.assistant_start_tokens, device=input_ids.device)
+        assistant_len = len(self.assistant_start_tokens)
+
+        for batch_idx in range(batch_size):
+            seq = input_ids[batch_idx]
+
+            # Find the position of assistant start tokens
+            found_pos = -1
+            for i in range(seq_len - assistant_len + 1):
+                if torch.equal(seq[i:i + assistant_len], assistant_tokens):
+                    found_pos = i
+                    # We want to mask up to and including "<|im_start|>assistant\n"
+                    # So the response starts after these tokens
+                    break
+
+            if found_pos >= 0:
+                # Mask everything up to and including the assistant start marker
+                mask_end = found_pos + assistant_len
+                labels[batch_idx, :mask_end] = -100
+            else:
+                # If we can't find the assistant marker, mask nothing (fallback)
+                # This shouldn't happen with proper chat template
+                logger.warning(f"Could not find assistant start marker in sequence {batch_idx}")
+
+        return labels
 
     def _convert_olmocr_to_qwen(self, inst: Dict) -> Optional[Dict]:
         """Convert OlmOCR instance to Qwen conversation format"""

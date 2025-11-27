@@ -242,7 +242,7 @@ class TrainingConfig:
     gradient_checkpointing_kwargs: Dict[str, Any] = field(default_factory=lambda: {"use_reentrant": False})
 
     # Evaluation and checkpointing
-    evaluation_strategy: str = "steps"
+    eval_strategy: str = "steps"  # Changed from evaluation_strategy (HF transformers renamed it)
     eval_steps: int = 500
     save_strategy: str = "steps"
     save_steps: int = 500

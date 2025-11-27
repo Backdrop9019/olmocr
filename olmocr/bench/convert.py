@@ -265,6 +265,7 @@ if __name__ == "__main__":
         "paddlevl": ("olmocr.bench.runners.run_paddlevl", "run_paddlevl"),
         "transformers": ("olmocr.bench.runners.run_transformers", "run_transformers"),
         "server": ("olmocr.bench.runners.run_server", "run_server"),
+        "qwen3": ("olmocr.bench.runners.run_qwen3", "run_qwen3"),
     }
 
     # Build config by importing only requested methods.

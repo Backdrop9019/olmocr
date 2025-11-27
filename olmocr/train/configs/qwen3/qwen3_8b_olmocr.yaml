@@ -67,13 +67,12 @@ dataset:
 
 # Training configuration - OlmOCR v0.4.0과 동일
 training:
-  output_dir: /home/kyungho/olmocr-qwen3-8b/
   num_train_epochs: 1
 
   # Batch size and accumulation
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1
-  gradient_accumulation_steps: 2
+  gradient_accumulation_steps: 4
 
   gradient_checkpointing: true
 
@@ -101,7 +100,7 @@ training:
   data_seed: 301
 
   # Evaluation and checkpointing
-  evaluation_strategy: steps
+  eval_strategy: steps
   eval_steps: 500
   save_strategy: steps
   save_steps: 500
