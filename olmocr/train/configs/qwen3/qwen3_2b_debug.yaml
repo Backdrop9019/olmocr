@@ -81,14 +81,11 @@ training:
   fp16: false
   tf32: true
 
-  # Torch compile - 디버깅시 끄기
-  torch_compile: false
-
   seed: 42
   data_seed: 42
 
   # Evaluation - 자주
-  evaluation_strategy: steps
+  eval_strategy: steps
   eval_steps: 20
   save_strategy: steps
   save_steps: 50

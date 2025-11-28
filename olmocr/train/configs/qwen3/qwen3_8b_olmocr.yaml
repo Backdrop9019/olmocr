@@ -72,7 +72,7 @@ training:
   # Batch size and accumulation
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1
-  gradient_accumulation_steps: 4
+  gradient_accumulation_steps: 8
 
   gradient_checkpointing: true
 
@@ -82,7 +82,7 @@ training:
   dataloader_num_workers: 4
 
   # Learning rate
-  learning_rate: 2e-5
+  learning_rate: 1e-5
   lr_scheduler_type: linear
   warmup_ratio: 0.1
 
@@ -101,16 +101,16 @@ training:
 
   # Evaluation and checkpointing
   eval_strategy: steps
-  eval_steps: 500
+  eval_steps: 5000
   save_strategy: steps
-  save_steps: 500
+  save_steps: 5000
   save_total_limit: 5
   load_best_model_at_end: false
-  metric_for_best_model: eval_processed_00_documents_eval_loss
+  metric_for_best_model: eval_loss
   greater_is_better: false
 
   # Logging
-  logging_steps: 10
+  logging_steps: 100
   logging_first_step: true
 
   report_to:

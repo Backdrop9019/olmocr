@@ -258,19 +258,20 @@ class OlmOCRQwen3DataCollator:
                 logger.info(f"  - Conversations: {len(conversations)} messages")
 
             # Calculate visual tokens for first image in batch (for logging)
-            if should_log_tokens and idx == 0 and image and hasattr(image, 'size'):
-                width, height = image.size
-                # Qwen3-VL uses 32x32 patches (patch_size=16, merge_size=2)
-                patch_size = 32  # 16 * 2
-                visual_tokens = (width // patch_size) * (height // patch_size)
-                logger.info(f"="*80)
-                logger.info(f"VISUAL TOKEN CALCULATION (Batch {self.batch_count}):")
-                logger.info(f"  - Image size: {width}×{height} pixels")
-                logger.info(f"  - Total pixels: {width * height:,}")
-                logger.info(f"  - Patch size: {patch_size}×{patch_size}")
-                logger.info(f"  - Visual tokens: {visual_tokens} tokens")
-                logger.info(f"  - Tokens per image: {visual_tokens} (after merge_size=2)")
-                logger.info(f"="*80)
+            # Commented out - too verbose
+            # if should_log_tokens and idx == 0 and image and hasattr(image, 'size'):
+            #     width, height = image.size
+            #     # Qwen3-VL uses 32x32 patches (patch_size=16, merge_size=2)
+            #     patch_size = 32  # 16 * 2
+            #     visual_tokens = (width // patch_size) * (height // patch_size)
+            #     logger.info(f"="*80)
+            #     logger.info(f"VISUAL TOKEN CALCULATION (Batch {self.batch_count}):")
+            #     logger.info(f"  - Image size: {width}×{height} pixels")
+            #     logger.info(f"  - Total pixels: {width * height:,}")
+            #     logger.info(f"  - Patch size: {patch_size}×{patch_size}")
+            #     logger.info(f"  - Visual tokens: {visual_tokens} tokens")
+            #     logger.info(f"  - Tokens per image: {visual_tokens} (after merge_size=2)")
+            #     logger.info(f"="*80)
 
             if not conversations or len(conversations) < 2:
                 if verbose:
@@ -415,23 +416,24 @@ class OlmOCRQwen3DataCollator:
         for batch_idx in range(batch_size):
             seq = input_ids[batch_idx]
 
-            # Find the position of assistant start tokens
-            found_pos = -1
-            for i in range(seq_len - assistant_len + 1):
-                if torch.equal(seq[i:i + assistant_len], assistant_tokens):
-                    found_pos = i
-                    # We want to mask up to and including "<|im_start|>assistant\n"
-                    # So the response starts after these tokens
-                    break
+            # Vectorized pattern matching using unfold (sliding window)
+            if seq_len >= assistant_len:
+                # Create all possible windows of size assistant_len
+                windows = seq.unfold(0, assistant_len, 1)  # (seq_len - assistant_len + 1, assistant_len)
+                # Check which windows match the assistant tokens
+                matches = (windows == assistant_tokens).all(dim=1)  # (seq_len - assistant_len + 1,)
+                match_indices = torch.where(matches)[0]
 
-            if found_pos >= 0:
-                # Mask everything up to and including the assistant start marker
-                mask_end = found_pos + assistant_len
-                labels[batch_idx, :mask_end] = -100
+                if len(match_indices) > 0:
+                    # Use first match position
+                    found_pos = match_indices[0].item()
+                    mask_end = found_pos + assistant_len
+                    labels[batch_idx, :mask_end] = -100
+                else:
+                    # If we can't find the assistant marker, mask nothing (fallback)
+                    logger.warning(f"Could not find assistant start marker in sequence {batch_idx}")
             else:
-                # If we can't find the assistant marker, mask nothing (fallback)
-                # This shouldn't happen with proper chat template
-                logger.warning(f"Could not find assistant start marker in sequence {batch_idx}")
+                logger.warning(f"Sequence {batch_idx} too short for assistant marker")
 
         return labels
 
@@ -547,7 +549,7 @@ def load_qwen3_model(model_args: Qwen3ModelArguments, training_args: TrainingArg
         logger.info(f"  - Attention implementation: {actual_attn}")
         if actual_attn != attn_impl:
             logger.error("="*80)
-            lo = torch.bfloat16gger.error(f"FLASH ATTENTION NOT APPLIED!")
+            logger.error(f"FLASH ATTENTION NOT APPLIED!")
             logger.error(f"Requested: {attn_impl}, Got: {actual_attn}")
             logger.error("Training cannot proceed without flash attention.")
             logger.error("="*80)
@@ -843,6 +845,31 @@ def main():
                     logger.info(f"  Keeping CLI deepspeed: {training_args.deepspeed}")
                     continue
 
+            # Special handling for output_dir: CLI args take precedence, never use default
+            if field_name == 'output_dir':
+                # HuggingFace TrainingArguments default is './output'
+                # Our config.py TrainingConfig default is './outputs'
+                # Both are bad - require explicit CLI or YAML specification
+                cli_output_dir = getattr(training_args, 'output_dir', None)
+                yaml_output_dir = value
+
+                # If CLI provided a real path (not HF default), use it
+                if cli_output_dir and cli_output_dir not in ('./output', 'output'):
+                    logger.info(f"  Keeping CLI output_dir: {cli_output_dir}")
+                    continue
+                # If YAML has a real path (not our default), use it
+                elif yaml_output_dir and yaml_output_dir not in ('./outputs', 'outputs'):
+                    logger.info(f"  Using YAML output_dir: {yaml_output_dir}")
+                    # Let it fall through to be set below
+                else:
+                    # Neither CLI nor YAML specified a real output_dir
+                    raise ValueError(
+                        "output_dir must be explicitly specified!\n"
+                        "  - Via CLI: --output_dir /path/to/output\n"
+                        "  - Via YAML: training.output_dir: /path/to/output\n"
+                        "Default values './output' or './outputs' are not allowed."
+                    )
+
             # Only copy if value is not None and training_args has this field
             if value is not None and hasattr(training_args, field_name):
                 # Get the current value from training_args to infer the expected type
@@ -863,26 +890,6 @@ def main():
 
     logger.info(f"✓ Copied {len(copied_fields)} training settings from OlmOCR config")
     logger.debug(f"  Copied fields: {', '.join(copied_fields)}")
-
-    # Auto-scale learning rate based on world size (number of GPUs)
-    import torch.distributed as dist
-    if dist.is_available() and dist.is_initialized():
-        world_size = dist.get_world_size()
-    else:
-        world_size = 1
-
-    if world_size > 1:
-        original_lr = training_args.learning_rate
-        # Linear scaling: LR = base_lr * world_size
-        training_args.learning_rate = original_lr * world_size
-        logger.info("="*80)
-        logger.info("LEARNING RATE AUTO-SCALING")
-        logger.info("="*80)
-        logger.info(f"Detected {world_size} GPUs")
-        logger.info(f"Original LR: {original_lr}")
-        logger.info(f"Scaled LR: {training_args.learning_rate} (×{world_size})")
-        logger.info(f"Effective batch size: {training_args.per_device_train_batch_size} × {world_size} GPUs × {training_args.gradient_accumulation_steps} accum = {training_args.per_device_train_batch_size * world_size * training_args.gradient_accumulation_steps}")
-        logger.info("="*80)
 
     # Enable training and evaluation by default when using OlmOCR config
     if hasattr(olmocr_config, 'dataset'):
