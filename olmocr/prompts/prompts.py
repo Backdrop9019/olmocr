@@ -170,6 +170,32 @@ def build_no_anchoring_v4_yaml_prompt() -> str:
     )
 
 
+def build_simple_ocr_prompt() -> str:
+    """Simple OCR prompt without front matter format requirement. For base models."""
+    return (
+        "Attached is one page of a document that you must process. "
+        "Just return the plain text representation of this document as if you were reading it naturally. Convert equations to LateX and tables to HTML.\n"
+        "If there are any figures or charts, label them with the following markdown syntax ![Alt text describing the contents of the figure](page_startx_starty_width_height.png)\n"
+        "Return your output as markdown."
+    )
+
+
+def build_simple_ocr_prompt_v2() -> str:
+    """
+    Simple OCR prompt v2 - optimized for base Qwen3-VL models.
+    Based on Qwen3-VL official cookbook recommendations.
+    Outputs: markdown with LaTeX equations and HTML tables.
+    """
+    return (
+        "Read all the text in the image and convert it to markdown format.\n"
+        "- Convert all mathematical equations and formulas to LaTeX (use \\( \\) for inline math, \\[ \\] for block math)\n"
+        "- Convert all tables to HTML format\n"
+        "- For figures or charts, use markdown image syntax: ![description](image)\n"
+        "- Preserve the document structure and reading order\n"
+        "Output only the markdown content without any additional explanation."
+    )
+
+
 # Extracts the anchor text component from an existing prompt string
 def extract_raw_text(prompt: str) -> str:
     pattern = r"RAW_TEXT_START\s*\n(.*?)\nRAW_TEXT_END"

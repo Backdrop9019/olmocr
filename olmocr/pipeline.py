@@ -38,7 +38,7 @@ from olmocr.data.renderpdf import render_pdf_to_base64png
 from olmocr.filter.filter import Language, PdfFilter
 from olmocr.image_utils import convert_image_to_pdf_bytes, is_jpeg, is_png
 from olmocr.metrics import MetricsKeeper, WorkerTracker
-from olmocr.prompts import PageResponse, build_no_anchoring_v4_yaml_prompt
+from olmocr.prompts import PageResponse, build_no_anchoring_v4_yaml_prompt, build_simple_ocr_prompt, build_simple_ocr_prompt_v2
 from olmocr.prompts.anchor import get_anchor_text
 from olmocr.s3_utils import (
     download_directory,
@@ -103,8 +103,8 @@ class PageResult:
     is_fallback: bool
 
 
-async def build_page_query(local_pdf_path: str, page: int, target_longest_image_dim: int, image_rotation: int = 0, model_name: str = "olmocr") -> dict:
-    MAX_TOKENS = 8000
+async def build_page_query(local_pdf_path: str, page: int, target_longest_image_dim: int, image_rotation: int = 0, model_name: str = "olmocr", prompt_first: bool = True, simple_ocr: str = None) -> dict:
+    MAX_TOKENS = 9000
     assert image_rotation in [0, 90, 180, 270], "Invalid image rotation provided in build_page_query"
 
     # Allow the page rendering to process in the background, but limit the number of workers otherwise you can overload the system
@@ -130,15 +130,31 @@ async def build_page_query(local_pdf_path: str, page: int, target_longest_image_
         # Encode the rotated image back to base64
         image_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
+    # Choose prompt based on simple_ocr mode
+    if simple_ocr == "v1":
+        prompt_text = build_simple_ocr_prompt()
+    elif simple_ocr == "v2":
+        prompt_text = build_simple_ocr_prompt_v2()
+    else:
+        prompt_text = build_no_anchoring_v4_yaml_prompt()
+
+    # Build content based on prompt_first setting
+    text_content = {"type": "text", "text": prompt_text}
+    image_content = {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}}
+
+    if prompt_first:
+        # [text, image] - default, matches olmocr official training
+        content = [text_content, image_content]
+    else:
+        # [image, text] - Qwen default style
+        content = [image_content, text_content]
+
     return {
         "model": model_name,
         "messages": [
             {
                 "role": "user",
-                "content": [
-                    {"type": "text", "text": build_no_anchoring_v4_yaml_prompt()},
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}},
-                ],
+                "content": content,
             }
         ],
         "max_tokens": MAX_TOKENS,
@@ -266,6 +282,8 @@ async def process_page(args, worker_id: int, pdf_orig_path: str, pdf_local_path:
             args.target_longest_image_dim,
             image_rotation=cumulative_rotation,
             model_name=args.model,
+            prompt_first=args.prompt_first,
+            simple_ocr=args.simple_ocr,
         )
         # Change temperature as number of attempts increases to overcome repetition issues at expense of quality
         query["temperature"] = TEMPERATURE_BY_ATTEMPT[lookup_attempt]
@@ -316,11 +334,22 @@ async def process_page(args, worker_id: int, pdf_orig_path: str, pdf_local_path:
 
             model_response_markdown = base_response_data["choices"][0]["message"]["content"]
 
-            parser = FrontMatterParser(front_matter_class=PageResponse)
-            front_matter, text = parser._extract_front_matter_and_text(model_response_markdown)
-            page_response = parser._parse_front_matter(front_matter, text)
+            # Simple OCR mode: skip front matter parsing, use raw output
+            if args.simple_ocr:
+                page_response = PageResponse(
+                    natural_text=model_response_markdown,
+                    primary_language=None,
+                    is_rotation_valid=True,
+                    rotation_correction=0,
+                    is_table=False,
+                    is_diagram=False,
+                )
+            else:
+                parser = FrontMatterParser(front_matter_class=PageResponse)
+                front_matter, text = parser._extract_front_matter_and_text(model_response_markdown)
+                page_response = parser._parse_front_matter(front_matter, text)
 
-            if not page_response.is_rotation_valid and attempt < MAX_RETRIES - 1:
+            if not args.simple_ocr and not page_response.is_rotation_valid and attempt < MAX_RETRIES - 1:
                 logger.info(
                     f"Got invalid_page rotation for {pdf_orig_path}-{page_num} attempt {attempt}, retrying with {page_response.rotation_correction} rotation"
                 )
@@ -1118,7 +1147,10 @@ async def main():
     parser.add_argument("--markdown", action="store_true", help="Also write natural text to markdown files preserving the folder structure of the input pdfs")
     parser.add_argument("--target_longest_image_dim", type=int, help="Dimension on longest side to use for rendering the pdf pages", default=1288)
     parser.add_argument("--target_anchor_text_len", type=int, help="Maximum amount of anchor text to use (characters), not used for new models", default=-1)
+    parser.add_argument("--simple-ocr", dest="simple_ocr", type=str, choices=["v1", "v2"], default=None, help="Simple OCR mode for base models: v1=olmocr-style, v2=qwen-optimized. No front matter, no parsing.")
     parser.add_argument("--guided_decoding", action="store_true", help="Enable guided decoding for model YAML type outputs")
+    parser.add_argument("--prompt-first", dest="prompt_first", action="store_true", default=True, help="[text, image] order (default, matches olmocr training)")
+    parser.add_argument("--no-prompt-first", dest="prompt_first", action="store_false", help="[image, text] order (Qwen default style)")
 
     server_group = parser.add_argument_group("Server arguments, to specify where your VLLM inference engine is running")
     server_group.add_argument(
@@ -1135,7 +1167,7 @@ async def main():
         "--gpu-memory-utilization", type=float, help="Fraction of VRAM vLLM may pre-allocate for KV-cache " "(passed through to vllm serve)."
     )
     vllm_group.add_argument("--max_model_len", type=int, default=16384, help="Upper bound (tokens) vLLM will allocate KV-cache for, lower if VLLM won't start")
-    vllm_group.add_argument("--tensor-parallel-size", "-tp", type=int, default=1, help="Tensor parallel size for vLLM")
+    vllm_group.add_argument("--tensor-parallel-size", "-tp", type=int, default=4, help="Tensor parallel size for vLLM")
     vllm_group.add_argument("--data-parallel-size", "-dp", type=int, default=1, help="Data parallel size for vLLM")
     vllm_group.add_argument("--port", type=int, default=30024, help="Port to use for the VLLM server")
 

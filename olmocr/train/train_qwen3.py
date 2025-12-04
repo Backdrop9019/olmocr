@@ -143,6 +143,101 @@ class Qwen3DataArguments(DataArguments):
     )
 
 
+def copy_tokenizer_files(base_model_name: str, output_dir: str) -> None:
+    """
+    Copy tokenizer and processor files from base model to output directory.
+
+    This is necessary because fine-tuned checkpoints don't include tokenizer files,
+    which causes vLLM and other inference engines to fail loading the model.
+
+    Args:
+        base_model_name: HuggingFace model name or local path (e.g., "Qwen/Qwen3-VL-8B-Instruct")
+        output_dir: Directory where the fine-tuned model was saved
+    """
+    import shutil
+    from huggingface_hub import hf_hub_download, HfFileSystem
+
+    # Files needed for tokenizer and processor
+    tokenizer_files = [
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "vocab.json",
+        "merges.txt",
+        "preprocessor_config.json",
+        "chat_template.json",
+    ]
+
+    output_path = Path(output_dir)
+
+    # Check if files already exist
+    existing_files = [f for f in tokenizer_files if (output_path / f).exists()]
+    if len(existing_files) == len(tokenizer_files):
+        logger.info(f"All tokenizer files already exist in {output_dir}")
+        return
+
+    logger.info(f"Copying tokenizer files from {base_model_name} to {output_dir}")
+
+    # Try to find base model files
+    base_path = Path(base_model_name)
+
+    if base_path.exists() and base_path.is_dir():
+        # Local model path
+        for file_name in tokenizer_files:
+            src = base_path / file_name
+            dst = output_path / file_name
+            if src.exists() and not dst.exists():
+                shutil.copy2(src, dst)
+                logger.info(f"  Copied {file_name} from local path")
+    else:
+        # HuggingFace model - download files
+        try:
+            for file_name in tokenizer_files:
+                dst = output_path / file_name
+                if dst.exists():
+                    continue
+                try:
+                    downloaded = hf_hub_download(
+                        repo_id=base_model_name,
+                        filename=file_name,
+                        local_dir=str(output_path),
+                        local_dir_use_symlinks=False
+                    )
+                    logger.info(f"  Downloaded {file_name} from HuggingFace")
+                except Exception as e:
+                    # Some files might not exist (e.g., chat_template.json)
+                    logger.debug(f"  Could not download {file_name}: {e}")
+        except Exception as e:
+            logger.warning(f"Failed to download tokenizer files from HuggingFace: {e}")
+            # Try to find in HF cache as fallback
+            try:
+                cache_dir = Path.home() / ".cache" / "huggingface" / "hub"
+                model_cache_name = f"models--{base_model_name.replace('/', '--')}"
+                model_cache = cache_dir / model_cache_name / "snapshots"
+
+                if model_cache.exists():
+                    # Get the latest snapshot
+                    snapshots = list(model_cache.iterdir())
+                    if snapshots:
+                        snapshot_dir = snapshots[0]
+                        for file_name in tokenizer_files:
+                            src = snapshot_dir / file_name
+                            dst = output_path / file_name
+                            if src.exists() and not dst.exists():
+                                shutil.copy2(src, dst)
+                                logger.info(f"  Copied {file_name} from HF cache")
+            except Exception as cache_e:
+                logger.warning(f"Failed to copy from HF cache: {cache_e}")
+
+    # Verify required files exist
+    required = ["tokenizer.json", "vocab.json", "merges.txt"]
+    missing = [f for f in required if not (output_path / f).exists()]
+    if missing:
+        logger.warning(f"Missing required tokenizer files: {missing}")
+        logger.warning("Model may not load correctly in vLLM or other inference engines")
+    else:
+        logger.info("Tokenizer files copied successfully!")
+
+
 class QwenTrainer(Trainer):
     """
     Custom Trainer that handles empty batches gracefully.
@@ -205,10 +300,11 @@ class OlmOCRQwen3DataCollator:
     Custom data collator that handles OlmOCR samples with Qwen3-VL
     """
 
-    def __init__(self, processor, merge_size=28, model_max_length=8192):
+    def __init__(self, processor, merge_size=28, model_max_length=8192, prompt_first=True):
         self.processor = processor
         self.merge_size = merge_size
         self.model_max_length = model_max_length
+        self.prompt_first = prompt_first  # If True: [text, image], if False: [image, text]
         self.batch_count = 0  # Track batches for logging
 
         # Get the token IDs for assistant response detection
@@ -217,6 +313,7 @@ class OlmOCRQwen3DataCollator:
             "<|im_start|>assistant\n", add_special_tokens=False
         )
         logger.info(f"Assistant start tokens: {self.assistant_start_tokens}")
+        logger.info(f"Content order: {'[text, image]' if self.prompt_first else '[image, text]'}")
 
     def __call__(self, instances: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
         self.batch_count += 1
@@ -287,12 +384,20 @@ class OlmOCRQwen3DataCollator:
                 if role == "human":
                     # First user message includes image
                     if len(messages) == 0:
+                        text_content = {"type": "text", "text": content.replace("<image>", "").strip()}
+                        image_content = {"type": "image"}
+
+                        # Order based on prompt_first setting
+                        if self.prompt_first:
+                            # [text, image] - matches pipeline.py inference
+                            content_list = [text_content, image_content]
+                        else:
+                            # [image, text] - Qwen default style
+                            content_list = [image_content, text_content]
+
                         messages.append({
                             "role": "user",
-                            "content": [
-                                {"type": "image"},
-                                {"type": "text", "text": content.replace("<image>", "").strip()}
-                            ]
+                            "content": content_list
                         })
                     else:
                         messages.append({"role": "user", "content": content})
@@ -464,19 +569,33 @@ def load_qwen3_model(model_args: Qwen3ModelArguments, training_args: TrainingArg
     logger.info("MODEL LOADING")
     logger.info("="*80)
 
-    # Determine model class based on model name (Qwen3-VL only)
+    # Determine model class based on config (supports local paths like chandra)
     model_name = model_args.model_name_or_path.lower()
     logger.info(f"Model name: {model_args.model_name_or_path}")
 
-    if "qwen3" in model_name:
-        if "moe" in model_name or "a" in model_name.split("/")[-1]:
+    # Load config to check model type
+    from transformers import AutoConfig
+    config = AutoConfig.from_pretrained(model_args.model_name_or_path, trust_remote_code=True)
+
+    is_qwen3_vl = (
+        getattr(config, 'model_type', '') == 'qwen3_vl' or
+        'Qwen3VL' in str(getattr(config, 'architectures', []))
+    )
+
+    if is_qwen3_vl:
+        # Check for MoE variant based on config (not model name - "chandra" contains "a"!)
+        is_moe = (
+            getattr(config, 'model_type', '') == 'qwen3_vl_moe' or
+            'Qwen3VLMoe' in str(getattr(config, 'architectures', []))
+        )
+        if is_moe:
             model_cls = Qwen3VLMoeForConditionalGeneration
             logger.info(f"Model class: Qwen3VLMoeForConditionalGeneration (MoE variant)")
         else:
             model_cls = Qwen3VLForConditionalGeneration
             logger.info(f"Model class: Qwen3VLForConditionalGeneration (Dense variant)")
     else:
-        raise ValueError(f"Only Qwen3-VL models are supported. Got: {model_name}")
+        raise ValueError(f"Only Qwen3-VL models are supported. Got model_type: {getattr(config, 'model_type', 'unknown')}")
 
     # Quantization config
     bnb_config = None
@@ -575,7 +694,7 @@ def load_qwen3_model(model_args: Qwen3ModelArguments, training_args: TrainingArg
     logger.info(f"  - Parameters: {sum(p.numel() for p in model.parameters()):,}")
     logger.info("="*80)
 
-    # Setup LoRA if needed
+    # Setup LoRA or configure component training (following Qwen3 official pattern)
     if model_args.use_lora:
         logger.info("="*80)
         logger.info("LORA CONFIGURATION")
@@ -587,20 +706,29 @@ def load_qwen3_model(model_args: Qwen3ModelArguments, training_args: TrainingArg
 
         from peft import LoraConfig, TaskType, get_peft_model
 
+        # Freeze all parameters first (Qwen3 official pattern)
+        for p in model.parameters():
+            p.requires_grad = False
+
+        # Handle target_modules - can be list (from YAML) or comma-separated string (from CLI)
+        target_modules = model_args.lora_target_modules
+        if isinstance(target_modules, str):
+            target_modules = target_modules.split(",")
+
         lora_config = LoraConfig(
             r=model_args.lora_r,
             lora_alpha=model_args.lora_alpha,
             lora_dropout=model_args.lora_dropout,
-            target_modules=model_args.lora_target_modules.split(","),
+            target_modules=target_modules,
             task_type=TaskType.CAUSAL_LM,
         )
 
         model = get_peft_model(model, lora_config)
         model.print_trainable_parameters()
         logger.info("="*80)
-
-    # Configure component training
-    set_model_components(model, model_args)
+    else:
+        # Configure component training (only for non-LoRA models)
+        set_model_components(model, model_args)
 
     return model
 
@@ -738,6 +866,11 @@ def create_olmocr_data_module(
     if hasattr(olmocr_config, 'qwen3_settings') and hasattr(olmocr_config.qwen3_settings, 'merge_size'):
         merge_size = olmocr_config.qwen3_settings.merge_size
 
+    # Get prompt_first from qwen3_settings if available (default: True to match pipeline.py)
+    prompt_first = True  # Default: [text, image] order (matches inference)
+    if hasattr(olmocr_config, 'qwen3_settings') and hasattr(olmocr_config.qwen3_settings, 'prompt_first'):
+        prompt_first = olmocr_config.qwen3_settings.prompt_first
+
     # Get model_max_length from training_args
     model_max_length = getattr(training_args, 'model_max_length', 8192)
 
@@ -745,8 +878,9 @@ def create_olmocr_data_module(
         processor=processor,
         merge_size=merge_size,
         model_max_length=model_max_length,
+        prompt_first=prompt_first,
     )
-    logger.info(f"✓ Data collator created (merge_size={merge_size}, model_max_length={model_max_length})")
+    logger.info(f"✓ Data collator created (merge_size={merge_size}, model_max_length={model_max_length}, prompt_first={prompt_first})")
     logger.info("="*80)
 
     return {
@@ -788,10 +922,19 @@ def main():
 
         # Copy all relevant model attributes
         for attr in ['tune_mm_llm', 'tune_mm_mlp', 'tune_mm_vision',
-                    'torch_dtype', 'attn_implementation']:
+                    'torch_dtype', 'attn_implementation',
+                    'use_lora', 'lora_dropout', 'lora_target_modules']:
             if hasattr(olmocr_config.model, attr):
                 setattr(model_args, attr, getattr(olmocr_config.model, attr))
                 logger.info(f"  Set model_args.{attr} = {getattr(olmocr_config.model, attr)}")
+
+        # LoRA rank has different names in config vs args
+        if hasattr(olmocr_config.model, 'lora_rank'):
+            model_args.lora_r = olmocr_config.model.lora_rank
+            logger.info(f"  Set model_args.lora_r = {olmocr_config.model.lora_rank}")
+        if hasattr(olmocr_config.model, 'lora_alpha'):
+            model_args.lora_alpha = olmocr_config.model.lora_alpha
+            logger.info(f"  Set model_args.lora_alpha = {olmocr_config.model.lora_alpha}")
 
         # Copy use_flash_attention to training_args instead
         if hasattr(olmocr_config.model, 'use_flash_attention'):
@@ -1105,6 +1248,10 @@ def main():
 
         # Save final model
         trainer.save_model()
+
+        # Copy tokenizer files from base model to output directory
+        # This is necessary for vLLM and other inference engines to load the model
+        copy_tokenizer_files(model_args.model_name_or_path, training_args.output_dir)
 
         # Save metrics
         metrics = train_result.metrics

@@ -1,12 +1,14 @@
-# Qwen3-VL 8B Production Configuration
-# OlmOCR v0.4.0 레시피 기반 (qwen25_vl_olmocrv4_rotation_1epoch_mix_1025_filtered.yaml)
+# Qwen3-VL 30B-A3B (MoE) LoRA Configuration
+# OlmOCR v0.4.0 레시피 기반
+# Note: MoE model - 30B total params, 3B active params
+# LoRA enabled for memory efficiency
 
 project_name: olmocr-qwen3-training
-run_name: qwen3-8b-olmocrv4-1epoch
+run_name: qwen3-30b-a3b-olmocrv4-1epoch-lora
 
 # Model configuration
 model:
-  name: Qwen/Qwen3-VL-8B-Instruct
+  name: Qwen/Qwen3-VL-30B-A3B-Instruct
   trust_remote_code: true
   torch_dtype: bfloat16
   use_flash_attention: true
@@ -17,7 +19,19 @@ model:
   tune_mm_mlp: true
   tune_mm_vision: false
 
-  use_lora: false
+  # LoRA configuration (Qwen3 공식 기본값)
+  use_lora: true
+  lora_rank: 64
+  lora_alpha: 16
+  lora_dropout: 0.05
+  lora_target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
 
 # Dataset configuration - OlmOCR v0.4.0과 동일
 dataset:
@@ -31,7 +45,7 @@ dataset:
         - name: ReformatLatexBoldItalic
         - name: DatasetTextRuleFilter
         - name: PDFRenderer
-          target_longest_image_dim: 1288 
+          target_longest_image_dim: 1288
         - name: RotationAugmentation
           probability: 0.02
         - name: NewYamlFinetuningPromptWithNoAnchoring
@@ -65,14 +79,14 @@ dataset:
       root_dir: /home/kyungho/frameworks/data/olmOCR-mix-1025/processed_03_national_archives_eval/
       pipeline: *basic_pipeline
 
-# Training configuration - OlmOCR v0.4.0과 동일
+# Training configuration
 training:
   num_train_epochs: 1
 
   # Batch size and accumulation
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1
-  gradient_accumulation_steps: 8
+  gradient_accumulation_steps: 4
 
   gradient_checkpointing: true
 
@@ -116,15 +130,13 @@ training:
   report_to:
     - wandb
 
-# Qwen3-VL settings (matching OlmOCR v0.4.0 - 1288 resolution)
+# Qwen3-VL settings
 qwen3_settings:
-  min_pixels: 262144        # 784  262144
-  max_pixels: 1800000       #  50176  810000
-  merge_size: 2  # Vision patch merge size
-  prompt_first: true  # [text, image] order - matches pipeline.py inference
+  min_pixels: 262144
+  max_pixels: 1800000
+  merge_size: 2
+  prompt_first: true
   use_olmocr_pipeline: true
   model_type: qwen3
   include_metadata: false
-  skip_validation: false  # Skip PDF validation for faster startup (set to false for production)
-  # Note: PDFRenderer creates 1288 images, smart_resize rounds to 1280 (divisible by 32)
-  # Note: factor = patch_size(16) * merge_size(2) = 32
+  skip_validation: true

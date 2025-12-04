@@ -310,6 +310,9 @@ class Qwen3Settings:
     # Vision model settings
     merge_size: int = 2  # Patch merge size
 
+    # Content order: True=[text, image] (matches pipeline.py), False=[image, text]
+    prompt_first: bool = True
+
     # Data format
     use_olmocr_pipeline: bool = True  # Use OlmOCR data pipeline
 

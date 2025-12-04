@@ -1,6 +1,6 @@
 #!/bin/bash
-# Qwen3-VL 8B Training Script
-# Using torchrun with DeepSpeed (following official Qwen3-VL approach)
+# Qwen3-VL 30B-A3B (MoE) LoRA Training Script
+# Using torchrun with DeepSpeed
 
 # Conda 환경 활성화
 source /home/kyungho/miniconda3/etc/profile.d/conda.sh
@@ -8,9 +8,9 @@ conda activate olmocr-qwen3
 
 # Configuration
 NPROC_PER_NODE=4  # Number of GPUs
-CONFIG_PATH="olmocr/train/configs/qwen3/qwen3_8b_olmocr_chandra.yaml"
+CONFIG_PATH="olmocr/train/configs/qwen3/qwen3_30b_a3b_olmocr_lora.yaml"
 SCRIPT_PATH="olmocr/train/train_qwen3.py"
-BASE_OUTPUT_DIR="/home/kyungho/olmocr-qwen3/8b/olmocr-qwen3-8b"
+BASE_OUTPUT_DIR="/home/kyungho/olmocr-qwen3/30b-a3b-lora/olmocr-qwen3-30b-a3b-lora"
 
 # Create timestamped output directory
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
@@ -26,12 +26,12 @@ cp "${CONFIG_PATH}" "${OUTPUT_DIR}/config.yaml"
 MASTER_ADDR=${MASTER_ADDR:-"127.0.0.1"}
 MASTER_PORT=${MASTER_PORT:-$(shuf -i 20001-29999 -n 1)}
 
-# Get DeepSpeed config
+# Get DeepSpeed config (Zero2 - same as Qwen3 official)
 DEEPSPEED_CONFIG="/home/kyungho/frameworks/olmocr/olmocr/train/configs/qwen3/zero2.json"
 
 # Print info
 echo "=========================================="
-echo "Starting Qwen3-VL 8B Training"
+echo "Starting Qwen3-VL 30B-A3B (MoE) LoRA Training"
 echo "=========================================="
 echo "Config: ${CONFIG_PATH}"
 echo "GPUs: ${NPROC_PER_NODE}"
@@ -39,6 +39,7 @@ echo "Master: ${MASTER_ADDR}:${MASTER_PORT}"
 echo "Conda env: ${CONDA_DEFAULT_ENV}"
 echo "Output dir: ${OUTPUT_DIR}"
 echo "Log file: ${LOG_DIR}/train.log"
+echo "Note: LoRA enabled for memory efficiency"
 echo "=========================================="
 
 # Run with nohup in background using torchrun

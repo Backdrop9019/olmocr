@@ -1,4 +1,6 @@
 # ml stuff
+temp/
+localworkspace*/
 wandb/
 *histogram.png
 *.json

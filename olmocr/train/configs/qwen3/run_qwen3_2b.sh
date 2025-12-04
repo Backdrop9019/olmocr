@@ -1,5 +1,5 @@
 #!/bin/bash
-# Qwen3-VL 8B Training Script
+# Qwen3-VL 2B Training Script
 # Using torchrun with DeepSpeed (following official Qwen3-VL approach)
 
 # Conda 환경 활성화
@@ -8,9 +8,9 @@ conda activate olmocr-qwen3
 
 # Configuration
 NPROC_PER_NODE=4  # Number of GPUs
-CONFIG_PATH="olmocr/train/configs/qwen3/qwen3_8b_olmocr_chandra.yaml"
+CONFIG_PATH="olmocr/train/configs/qwen3/qwen3_2b_olmocr.yaml"
 SCRIPT_PATH="olmocr/train/train_qwen3.py"
-BASE_OUTPUT_DIR="/home/kyungho/olmocr-qwen3/8b/olmocr-qwen3-8b"
+BASE_OUTPUT_DIR="/home/kyungho/olmocr-qwen3/2b/olmocr-qwen3-2b"
 
 # Create timestamped output directory
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
@@ -31,7 +31,7 @@ DEEPSPEED_CONFIG="/home/kyungho/frameworks/olmocr/olmocr/train/configs/qwen3/zer
 
 # Print info
 echo "=========================================="
-echo "Starting Qwen3-VL 8B Training"
+echo "Starting Qwen3-VL 2B Training"
 echo "=========================================="
 echo "Config: ${CONFIG_PATH}"
 echo "GPUs: ${NPROC_PER_NODE}"

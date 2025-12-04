@@ -6,7 +6,7 @@ run_name: qwen3-8b-olmocrv4-1epoch
 
 # Model configuration
 model:
-  name: Qwen/Qwen3-VL-8B-Instruct
+  name: /home/kyungho/models/chandra
   trust_remote_code: true
   torch_dtype: bfloat16
   use_flash_attention: true

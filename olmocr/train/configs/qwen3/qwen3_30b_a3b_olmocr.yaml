@@ -1,12 +1,13 @@
-# Qwen3-VL 8B Production Configuration
+# Qwen3-VL 30B-A3B (MoE) Production Configuration
 # OlmOCR v0.4.0 레시피 기반 (qwen25_vl_olmocrv4_rotation_1epoch_mix_1025_filtered.yaml)
+# Note: MoE model - 30B total params, 3B active params
 
 project_name: olmocr-qwen3-training
-run_name: qwen3-8b-olmocrv4-1epoch
+run_name: qwen3-30b-a3b-olmocrv4-1epoch
 
 # Model configuration
 model:
-  name: Qwen/Qwen3-VL-8B-Instruct
+  name: Qwen/Qwen3-VL-30B-A3B-Instruct
   trust_remote_code: true
   torch_dtype: bfloat16
   use_flash_attention: true
@@ -31,7 +32,7 @@ dataset:
         - name: ReformatLatexBoldItalic
         - name: DatasetTextRuleFilter
         - name: PDFRenderer
-          target_longest_image_dim: 1288 
+          target_longest_image_dim: 1288
         - name: RotationAugmentation
           probability: 0.02
         - name: NewYamlFinetuningPromptWithNoAnchoring
@@ -65,14 +66,14 @@ dataset:
       root_dir: /home/kyungho/frameworks/data/olmOCR-mix-1025/processed_03_national_archives_eval/
       pipeline: *basic_pipeline
 
-# Training configuration - OlmOCR v0.4.0과 동일
+# Training configuration - MoE 모델용 조정
 training:
   num_train_epochs: 1
 
-  # Batch size and accumulation
+  # Batch size and accumulation - MoE는 메모리 사용량이 크므로 축소
   per_device_train_batch_size: 1
   per_device_eval_batch_size: 1
-  gradient_accumulation_steps: 8
+  gradient_accumulation_steps: 16  # 8B는 8, MoE는 메모리 절약 위해 늘림
 
   gradient_checkpointing: true
 
@@ -81,7 +82,7 @@ training:
   # Dataset
   dataloader_num_workers: 4
 
-  # Learning rate
+  # Learning rate - MoE는 보통 더 낮은 lr 사용
   learning_rate: 1e-5
   lr_scheduler_type: linear
   warmup_ratio: 0.1
@@ -104,7 +105,7 @@ training:
   eval_steps: 5000
   save_strategy: steps
   save_steps: 5000
-  save_total_limit: 5
+  save_total_limit: 3  # MoE 체크포인트가 크므로 줄임
   load_best_model_at_end: false
   metric_for_best_model: eval_loss
   greater_is_better: false
@@ -125,6 +126,6 @@ qwen3_settings:
   use_olmocr_pipeline: true
   model_type: qwen3
   include_metadata: false
-  skip_validation: false  # Skip PDF validation for faster startup (set to false for production)
+  skip_validation: true
   # Note: PDFRenderer creates 1288 images, smart_resize rounds to 1280 (divisible by 32)
   # Note: factor = patch_size(16) * merge_size(2) = 32
