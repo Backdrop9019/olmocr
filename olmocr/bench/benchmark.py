@@ -187,9 +187,16 @@ def main():
     )
     # New arguments
     parser.add_argument("--sample", type=int, default=None, help="Randomly sample N tests to run instead of all tests.")
-    parser.add_argument("--test_report", type=str, default=None, help="Generate an HTML report of test results. Provide a filename (e.g., results.html).")
+    parser.add_argument("--test_report", action="store_true", default=True, help="Generate an HTML report of test results (saved to candidate_folder/benchmark_report.html)")
+    parser.add_argument("--no-test-report", action="store_false", dest="test_report", help="Disable generating HTML report")
     parser.add_argument(
         "--output_failed", type=str, default=None, help="Output a JSONL file containing tests that failed across all candidates. Provide a filename."
+    )
+    parser.add_argument(
+        "--save-results", action="store_true", default=True, help="Save benchmark results as JSON to the candidate folder (e.g., candidate_folder/benchmark_results.json)"
+    )
+    parser.add_argument(
+        "--no-save-results", action="store_false", dest="save_results", help="Disable saving benchmark results as JSON"
     )
     args = parser.parse_args()
 
@@ -409,7 +416,77 @@ def main():
 
     # Generate HTML report if requested
     if args.test_report:
-        generate_html_report(test_results_by_candidate, pdf_folder, args.test_report)
+        for candidate_name, _, _, candidate_errors, _, _, _, _ in summary:
+            if candidate_errors:
+                continue
+            candidate_folder = os.path.join(input_folder, candidate_name)
+            report_path = os.path.join(candidate_folder, "benchmark_report.html")
+            # Filter test_results for this candidate only
+            candidate_test_results = {candidate_name: test_results_by_candidate.get(candidate_name, {})}
+            generate_html_report(candidate_test_results, pdf_folder, report_path)
+            print(f"HTML report saved to: {report_path}")
+
+    # Save benchmark results as JSON if requested
+    if args.save_results:
+        import json
+        from datetime import datetime
+
+        for candidate_name, overall_score, total_tests, candidate_errors, _, test_type_breakdown, ci, _ in summary:
+            if candidate_errors:
+                continue
+
+            # Build jsonl_results for this candidate
+            jsonl_results = {}
+            for test in all_tests:
+                jsonl_file = test_to_jsonl.get(test.id, "unknown")
+                if jsonl_file not in jsonl_results:
+                    jsonl_results[jsonl_file] = {"total": 0, "passed": 0}
+                jsonl_results[jsonl_file]["total"] += 1
+
+                if hasattr(test, "pdf") and hasattr(test, "page"):
+                    pdf_name = test.pdf
+                    page = test.page
+                    if pdf_name in test_results_by_candidate.get(candidate_name, {}) and page in test_results_by_candidate[candidate_name].get(pdf_name, {}):
+                        for t, passed, _ in test_results_by_candidate[candidate_name][pdf_name][page]:
+                            if t.id == test.id and passed:
+                                jsonl_results[jsonl_file]["passed"] += 1
+                                break
+
+            # Calculate per-jsonl pass rates
+            jsonl_pass_rates = {}
+            for jsonl_file, results in jsonl_results.items():
+                if results["total"] > 0:
+                    jsonl_pass_rates[jsonl_file] = {
+                        "pass_rate": results["passed"] / results["total"],
+                        "passed": results["passed"],
+                        "total": results["total"]
+                    }
+
+            # Calculate per-type breakdown
+            type_breakdown = {}
+            for ttype, scores in test_type_breakdown.items():
+                if scores:
+                    type_breakdown[ttype] = {
+                        "avg_pass_rate": sum(scores) / len(scores),
+                        "num_tests": len(scores)
+                    }
+
+            results_data = {
+                "candidate": candidate_name,
+                "timestamp": datetime.now().isoformat(),
+                "overall_score": overall_score,
+                "confidence_interval": {"lower": ci[0], "upper": ci[1]},
+                "total_tests": total_tests,
+                "results_by_jsonl": jsonl_pass_rates,
+                "results_by_type": type_breakdown
+            }
+
+            # Save to candidate folder
+            candidate_folder = os.path.join(input_folder, candidate_name)
+            results_path = os.path.join(candidate_folder, "benchmark_results.json")
+            with open(results_path, "w", encoding="utf-8") as f:
+                json.dump(results_data, f, indent=2, ensure_ascii=False)
+            print(f"\nBenchmark results saved to: {results_path}")
 
     # Output tests that failed across all candidates if requested
     if args.output_failed:

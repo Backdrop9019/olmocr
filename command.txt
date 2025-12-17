@@ -1,0 +1,32 @@
+python -m olmocr.pipeline ./localworkspace_olmocr-qwen3-8b_chandra_own --markdown --model /home/kyungho/olmocr-qwen3/8b/olmocr-qwen3-8b_chandra_own --pdfs ./olmOCR-bench/bench_data/pdfs/**/*.pdf
+
+
+python olmocr/bench/scripts/workspace_to_bench.py \
+  ./localworkspace_olmocr-qwen3-8b_chandra_own \
+  ./olmOCR-bench/bench_data/qwen3-8b_chandra_own \
+  --bench-path ./olmOCR-bench/
+
+python -m olmocr.bench.benchmark --dir ./olmOCR-bench/bench_data/table_tests.jsonl --candidate qwen3-8b_chandra_own 
+
+
+
+한국어
+ Pipeline 실행 (OCR 추론)
+
+python -m olmocr.pipeline ./localworkspace_korean_olmocr \
+  --markdown \
+  --model allenai/olmOCR-2-7B-1025-FP8 \
+  --pdfs /home/kyungho/frameworks/olmocr/korean-bench/bench_data/pdfs/*.pdf
+
+
+python olmocr/bench/scripts/workspace_to_bench.py \
+  ./localworkspace_korean_olmocr \
+  /home/kyungho/frameworks/olmocr/korean-bench/bench_data/olmocr \
+  --bench-path /home/kyungho/frameworks/olmocr/korean-bench/
+3. Benchmark 실행
+
+# long_tests (텍스트 존재 검증)
+python -m olmocr.bench.benchmark \
+  --dir /home/kyungho/frameworks/olmocr/korean-bench/bench_data \
+  --candidate olmocr
+

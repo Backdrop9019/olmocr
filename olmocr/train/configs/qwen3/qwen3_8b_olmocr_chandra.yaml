@@ -50,7 +50,10 @@ dataset:
     - name: processed_03_national_archives_train
       root_dir: /home/kyungho/frameworks/data/olmOCR-mix-1025/processed_03_national_archives_train/
       pipeline: *basic_pipeline
-
+    - name: labeled_custom_dataset_full
+      root_dir: /home/kyungho/frameworks/data/labeled_custom_dataset_full/
+      pipeline: *basic_pipeline
+      
   eval:
     - name: processed_00_documents_eval
       root_dir: /home/kyungho/frameworks/data/olmOCR-mix-1025/processed_00_documents_eval/
@@ -82,7 +85,7 @@ training:
   dataloader_num_workers: 4
 
   # Learning rate
-  learning_rate: 1e-5
+  learning_rate: 5e-7 #1e-6 # 1e-5
   lr_scheduler_type: linear
   warmup_ratio: 0.1
 
@@ -101,10 +104,10 @@ training:
 
   # Evaluation and checkpointing
   eval_strategy: steps
-  eval_steps: 5000
+  eval_steps: 1000
   save_strategy: steps
-  save_steps: 5000
-  save_total_limit: 5
+  save_steps: 3000
+  save_total_limit: 3
   load_best_model_at_end: false
   metric_for_best_model: eval_loss
   greater_is_better: false

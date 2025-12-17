@@ -20,6 +20,7 @@ old_train/
 gpt4otestset_output/*
 pdfs/*
 olmOCR-bench/*
+korean-bench/*
 table_data*/
 /synth*/
 dolma_samples/*
