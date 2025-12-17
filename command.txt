@@ -23,7 +23,6 @@ python olmocr/bench/scripts/workspace_to_bench.py \
   ./localworkspace_korean_olmocr \
   /home/kyungho/frameworks/olmocr/korean-bench/bench_data/olmocr \
   --bench-path /home/kyungho/frameworks/olmocr/korean-bench/
-3. Benchmark 실행
 
 # long_tests (텍스트 존재 검증)
 python -m olmocr.bench.benchmark \

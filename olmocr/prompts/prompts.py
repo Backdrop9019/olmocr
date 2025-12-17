@@ -196,6 +196,38 @@ def build_simple_ocr_prompt_v2() -> str:
     )
 
 
+# Chandra prompt constants
+CHANDRA_ALLOWED_TAGS = [
+    "math", "br", "i", "b", "u", "del", "sup", "sub", "table", "tr", "td", "p", "th",
+    "div", "pre", "h1", "h2", "h3", "h4", "h5", "ul", "ol", "li", "input", "a", "span",
+    "img", "hr", "tbody", "small", "caption", "strong", "thead", "big", "code",
+]
+CHANDRA_ALLOWED_ATTRIBUTES = [
+    "class", "colspan", "rowspan", "display", "checked", "type", "border", "value",
+    "style", "href", "alt", "align",
+]
+
+
+def build_chandra_ocr_prompt() -> str:
+    """
+    Chandra-style OCR prompt - outputs HTML with <math> tags for LaTeX.
+    Compatible with Chandra model training format.
+    """
+    return f"""OCR this image to HTML.
+
+Only use these tags {CHANDRA_ALLOWED_TAGS}, and these attributes {CHANDRA_ALLOWED_ATTRIBUTES}.
+
+Guidelines:
+* Inline math: Surround math with <math>...</math> tags. Math expressions should be rendered in KaTeX-compatible LaTeX. Use display for block math.
+* Tables: Use colspan and rowspan attributes to match table structure.
+* Formatting: Maintain consistent formatting with the image, including spacing, indentation, subscripts/superscripts, and special characters.
+* Images: Include a description of any images in the alt attribute of an <img> tag. Do not fill out the src property.
+* Forms: Mark checkboxes and radio buttons properly.
+* Text: join lines together properly into paragraphs using <p>...</p> tags.  Use <br> tags for line breaks within paragraphs, but only when absolutely necessary to maintain meaning.
+* Use the simplest possible HTML structure that accurately represents the content of the block.
+* Make sure the text is accurate and easy for a human to read and interpret.  Reading order should be correct and natural."""
+
+
 # Extracts the anchor text component from an existing prompt string
 def extract_raw_text(prompt: str) -> str:
     pattern = r"RAW_TEXT_START\s*\n(.*?)\nRAW_TEXT_END"

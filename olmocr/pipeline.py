@@ -38,7 +38,7 @@ from olmocr.data.renderpdf import render_pdf_to_base64png
 from olmocr.filter.filter import Language, PdfFilter
 from olmocr.image_utils import convert_image_to_pdf_bytes, is_jpeg, is_png
 from olmocr.metrics import MetricsKeeper, WorkerTracker
-from olmocr.prompts import PageResponse, build_no_anchoring_v4_yaml_prompt, build_simple_ocr_prompt, build_simple_ocr_prompt_v2
+from olmocr.prompts import PageResponse, build_no_anchoring_v4_yaml_prompt, build_simple_ocr_prompt, build_simple_ocr_prompt_v2, build_chandra_ocr_prompt
 from olmocr.prompts.anchor import get_anchor_text
 from olmocr.s3_utils import (
     download_directory,
@@ -135,6 +135,8 @@ async def build_page_query(local_pdf_path: str, page: int, target_longest_image_
         prompt_text = build_simple_ocr_prompt()
     elif simple_ocr == "v2":
         prompt_text = build_simple_ocr_prompt_v2()
+    elif simple_ocr == "chandra":
+        prompt_text = build_chandra_ocr_prompt()
     else:
         prompt_text = build_no_anchoring_v4_yaml_prompt()
 
@@ -1147,7 +1149,7 @@ async def main():
     parser.add_argument("--markdown", action="store_true", help="Also write natural text to markdown files preserving the folder structure of the input pdfs")
     parser.add_argument("--target_longest_image_dim", type=int, help="Dimension on longest side to use for rendering the pdf pages", default=1288)
     parser.add_argument("--target_anchor_text_len", type=int, help="Maximum amount of anchor text to use (characters), not used for new models", default=-1)
-    parser.add_argument("--simple-ocr", dest="simple_ocr", type=str, choices=["v1", "v2"], default=None, help="Simple OCR mode for base models: v1=olmocr-style, v2=qwen-optimized. No front matter, no parsing.")
+    parser.add_argument("--simple-ocr", dest="simple_ocr", type=str, choices=["v1", "v2", "chandra"], default=None, help="Simple OCR mode for base models: v1=olmocr-style, v2=qwen-optimized, chandra=HTML with <math> tags. No front matter, no parsing.")
     parser.add_argument("--guided_decoding", action="store_true", help="Enable guided decoding for model YAML type outputs")
     parser.add_argument("--prompt-first", dest="prompt_first", action="store_true", default=True, help="[text, image] order (default, matches olmocr training)")
     parser.add_argument("--no-prompt-first", dest="prompt_first", action="store_false", help="[image, text] order (Qwen default style)")
