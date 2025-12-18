@@ -132,9 +132,13 @@ def generate_html_report(
                 tests = test_results_by_candidate[candidate][pdf_name][page]
 
                 for test, passed, explanation in tests:
-                    result_class = "pass" if passed else "fail"
-                    status_text = "PASSED" if passed else "FAILED"
-                    status_class = "pass-status" if passed else "fail-status"
+                    # Only include failed tests in report
+                    if passed:
+                        continue
+
+                    result_class = "fail"
+                    status_text = "FAILED"
+                    status_class = "fail-status"
 
                     # Begin test block
                     html += f"""

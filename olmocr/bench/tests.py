@@ -908,11 +908,9 @@ class BaselineTest(BasePDFTest):
             if count > self.max_repeats:
                 return False, f"Text ends with {count} repeating {index+1}-grams, invalid"
 
+        # Only check for emoji, allow CJK characters (Chinese/Japanese/Korean)
         pattern = re.compile(
             r"["
-            r"\u4e00-\u9FFF"  # CJK Unified Ideographs (Chinese characters)
-            r"\u3040-\u309F"  # Hiragana (Japanese)
-            r"\u30A0-\u30FF"  # Katakana (Japanese)
             r"\U0001F600-\U0001F64F"  # Emoticons (Emoji)
             r"\U0001F300-\U0001F5FF"  # Miscellaneous Symbols and Pictographs (Emoji)
             r"\U0001F680-\U0001F6FF"  # Transport and Map Symbols (Emoji)
