@@ -1,0 +1,96 @@
+# OlmOCR Korean Finetuning Configuration
+
+# Project metadata
+project_name: olmocr-korean-finetuning
+run_name: olmocr_korean_full_ft
+
+# Model configuration
+model:
+  name: allenai/olmOCR-2-7B-1025
+  trust_remote_code: true
+  torch_dtype: bfloat16
+  use_flash_attention: true
+  attn_implementation: flash_attention_2
+
+# Dataset configuration
+dataset:
+
+  train:
+    - name: korean_train_data
+      root_dir: /home/kyungho/frameworks/data/labeled_custom_dataset_full/
+      pipeline: &basic_pipeline
+        - name: FrontMatterParser
+          front_matter_class: PageResponse
+        - name: FilterOutRotatedDocuments
+        - name: ReformatLatexBoldItalic
+        - name: DatasetTextRuleFilter
+        - name: PDFRenderer
+          target_longest_image_dim: 1288
+        - name: RotationAugmentation
+          probability: 0.02
+        - name: NewYamlFinetuningPromptWithNoAnchoring
+        - name: FrontMatterOutputFormat
+        - name: InstructUserMessages
+          prompt_first: true
+        - name: Tokenizer
+          masking_index: -100
+          end_of_message_token: "<|im_end|>"
+
+  eval:
+    - name: processed_00_documents_eval
+      root_dir: /home/kyungho/frameworks/data/olmOCR-mix-1025/processed_00_documents_eval/
+      pipeline: *basic_pipeline
+    - name: processed_01_books_eval
+      root_dir: /home/kyungho/frameworks/data/olmOCR-mix-1025/processed_01_books_eval/
+      pipeline: *basic_pipeline
+
+# Training configuration
+training:
+  output_dir: /home/kyungho/frameworks/olmocr-ft/outputs
+  num_train_epochs: 1
+
+  # Batch size and accumulation
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  gradient_accumulation_steps: 16
+
+  gradient_checkpointing: true
+
+  collator_max_token_len: 8192
+
+  # Learning rate
+  learning_rate: 1e-6
+  lr_scheduler_type: linear
+  warmup_ratio: 0.1
+
+  # Optimization
+  optim: adamw_torch
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+
+  # Torch compile settings
+  torch_compile: false
+  torch_compile_backend: inductor
+  torch_compile_mode: default
+  torch_compile_fullgraph: false
+  torch_compile_dynamic: false
+
+  seed: 300
+  data_seed: 301
+
+  # Evaluation and checkpointing
+  evaluation_strategy: steps
+  eval_steps: 500
+  save_strategy: steps
+  save_steps: 500
+  save_total_limit: 3
+  load_best_model_at_end: false
+  metric_for_best_model: eval_loss
+  greater_is_better: false
+
+  # Logging
+  logging_steps: 500
+  logging_first_step: true
+
+  report_to:
+    - wandb

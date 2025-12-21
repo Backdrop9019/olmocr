@@ -33,7 +33,7 @@ debug.log
 birrpipeline-debug.log
 beakerpipeline-debug.log
 olmocr-pipeline-debug.log
-
+outputs/*
 # build artifacts
 
 .eggs/
