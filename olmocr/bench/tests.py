@@ -120,14 +120,16 @@ def normalize_text(md_content: str) -> str:
     # Normalize <br> and <br/> to newlines
     md_content = re.sub(r"<br/?>", " ", md_content)
 
+    # Remove HTML tags except table-related tags (table, tr, td, th, thead, tbody, caption)
+    # This handles Chandra-style HTML output (div, p, h1, span, etc.)
+    md_content = re.sub(r"</?(?!table|tr|td|th|thead|tbody|caption)[a-zA-Z][a-zA-Z0-9]*(?:\s[^>]*)?>", " ", md_content)
+
     # Normalize whitespace in the md_content
     md_content = re.sub(r"\s+", " ", md_content)
 
     # Remove markdown bold formatting (** or __ for bold)
     md_content = re.sub(r"\*\*(.*?)\*\*", r"\1", md_content)
     md_content = re.sub(r"__(.*?)__", r"\1", md_content)
-    md_content = re.sub(r"</?b>", "", md_content)  # Remove <b> tags if they exist
-    md_content = re.sub(r"</?i>", "", md_content)  # Remove <i> tags if they exist
 
     # Remove markdown italics formatting (* or _ for italics)
     md_content = re.sub(r"\*(.*?)\*", r"\1", md_content)
@@ -949,6 +951,7 @@ class MathTest(BasePDFTest):
         patterns = [
             (r"\\\((.+?)\\\)", r"\\\((.+?)\\\)"),  # \(...\)
             (r"\\\[(.+?)\\\]", r"\\\[(.+?)\\\]"),  # \[...\]
+            (r"<math(?:\s[^>]*)?>(.+?)</math>", r"<math(?:\s[^>]*)?>(.+?)</math>"),  # <math>...</math> (Chandra style)
         ]
 
         if not self.ignore_dollar_delimited:

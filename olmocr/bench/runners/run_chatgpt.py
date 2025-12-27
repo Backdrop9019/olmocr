@@ -84,7 +84,7 @@ def run_chatgpt(
             }
         ],
         temperature=temperature,
-        max_completion_tokens=20000,
+        max_completion_tokens=16384,
         # reasoning_effort="high",
         response_format=openai_response_format_schema() if response_template == "json" else None,
         safety_identifier="olmocr-bench-runner",

@@ -8,7 +8,7 @@ conda activate olmocr-qwen3
 
 # Configuration
 NPROC_PER_NODE=4  # Number of GPUs
-CONFIG_PATH="olmocr/train/configs/qwen3/qwen3_8b_olmocr_chandra.yaml"
+CONFIG_PATH="olmocr/train/configs/qwen3/olmocr_own.yaml"
 SCRIPT_PATH="olmocr/train/train_qwen3.py"
 BASE_OUTPUT_DIR="/home/kyungho/olmocr-qwen3/8b/olmocr-qwen3-8b"
 

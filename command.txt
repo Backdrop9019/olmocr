@@ -1,4 +1,4 @@
-python -m olmocr.pipeline ./localworkspace_olmocr-qwen3-8b_chandra_own --markdown --model /home/kyungho/olmocr-qwen3/8b/olmocr-qwen3-8b_chandra_own --pdfs ./olmOCR-bench/bench_data/pdfs/**/*.pdf
+python -m olmocr.pipeline ./localworkspace_korean_olmocr --markdown --model /home/kyungho/olmocr-qwen3/8b/korean_olmocr --pdfs ./olmOCR-bench/bench_data/pdfs/**/*.pdf
 
 
 python olmocr/bench/scripts/workspace_to_bench.py \
@@ -10,22 +10,40 @@ python -m olmocr.bench.benchmark --dir ./olmOCR-bench/bench_data/table_tests.jso
 
 
 
-한국어
- Pipeline 실행 (OCR 추론)
+# korean bench (chandra style)
+# 1. Pipeline 실행 (상대경로)
+CUDA_VISIBLE_DEVICES=2,3 python -m olmocr.pipeline ./localworkspace_korean_chandra \
+  --markdown \
+  --model /home/kyungho/models/chandra \
+  --pdfs ./korean-bench/bench_data/pdfs/**/*.pdf \
+  --simple-ocr chandra \
+   --no-prompt-first \
+  --tensor-parallel-size 2
+# 2. Workspace to bench 변환 (상대경로)
+python olmocr/bench/scripts/workspace_to_bench.py \
+  ./localworkspace_korean_chandra \
+  ./korean-bench/bench_data/chandra \
+  --bench-path ./korean-bench/
 
+# 3. Benchmark 실행 (상대경로)
+python -m olmocr.bench.benchmark \
+  --dir ./korean-bench/bench_data \
+  --candidate chandra
+
+
+# korean bench (olmocr style)
+# 1. Pipeline 실행 (상대경로)
 python -m olmocr.pipeline ./localworkspace_korean_olmocr \
   --markdown \
-  --model allenai/olmOCR-2-7B-1025-FP8 \
-  --pdfs /home/kyungho/frameworks/olmocr/korean-bench/bench_data/pdfs/*.pdf
+  --pdfs ./korean-bench/bench_data/pdfs/**/*.pdf
 
-
+# 2. Workspace to bench 변환 (상대경로)
 python olmocr/bench/scripts/workspace_to_bench.py \
   ./localworkspace_korean_olmocr \
-  /home/kyungho/frameworks/olmocr/korean-bench/bench_data/olmocr \
-  --bench-path /home/kyungho/frameworks/olmocr/korean-bench/
+  ./korean-bench/bench_data/olmocr \
+  --bench-path ./korean-bench/
 
-# long_tests (텍스트 존재 검증)
+# 3. Benchmark 실행 (상대경로)
 python -m olmocr.bench.benchmark \
-  --dir /home/kyungho/frameworks/olmocr/korean-bench/bench_data \
+  --dir ./korean-bench/bench_data \
   --candidate olmocr
-

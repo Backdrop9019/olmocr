@@ -104,7 +104,7 @@ class PageResult:
 
 
 async def build_page_query(local_pdf_path: str, page: int, target_longest_image_dim: int, image_rotation: int = 0, model_name: str = "olmocr", prompt_first: bool = True, simple_ocr: str = None) -> dict:
-    MAX_TOKENS = 9000
+    MAX_TOKENS = 15000
     assert image_rotation in [0, 90, 180, 270], "Invalid image rotation provided in build_page_query"
 
     # Allow the page rendering to process in the background, but limit the number of workers otherwise you can overload the system

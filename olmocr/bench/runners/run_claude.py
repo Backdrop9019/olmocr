@@ -1,8 +1,8 @@
-import json
 import os
 
 from anthropic import Anthropic
-from prompts import build_openai_silver_data_prompt, claude_response_format_schema
+from olmocr.bench.prompts import claude_response_format_schema
+from olmocr.prompts.prompts import build_openai_silver_data_prompt
 
 from olmocr.data.renderpdf import render_pdf_to_base64png
 from olmocr.prompts.anchor import get_anchor_text
@@ -57,5 +57,4 @@ def run_claude(pdf_path: str, page_num: int = 1, model: str = "claude-3-7-sonnet
             break
 
     if json_sentiment:
-        response = json.dumps(json_sentiment, indent=2)
-        return response
+        return json_sentiment.get("natural_text", "")

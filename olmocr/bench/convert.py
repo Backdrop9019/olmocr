@@ -257,6 +257,7 @@ if __name__ == "__main__":
         "marker": ("olmocr.bench.runners.run_marker", "run_marker"),
         "mineru": ("olmocr.bench.runners.run_mineru", "run_mineru"),
         "chatgpt": ("olmocr.bench.runners.run_chatgpt", "run_chatgpt"),
+        "claude": ("olmocr.bench.runners.run_claude", "run_claude"),
         "gemini": ("olmocr.bench.runners.run_gemini", "run_gemini"),
         "mistral": ("olmocr.bench.runners.run_mistral", "run_mistral"),
         "docling": ("olmocr.bench.runners.run_docling", "run_docling"),
@@ -265,6 +266,9 @@ if __name__ == "__main__":
         "paddlevl": ("olmocr.bench.runners.run_paddlevl", "run_paddlevl"),
         "transformers": ("olmocr.bench.runners.run_transformers", "run_transformers"),
         "server": ("olmocr.bench.runners.run_server", "run_server"),
+        "chatgpt_latest": ("olmocr.bench.runners.run_chatgpt_latest", "run_chatgpt_latest"),
+        "claude_latest": ("olmocr.bench.runners.run_claude_latest", "run_claude_latest"),
+        "gemini_latest": ("olmocr.bench.runners.run_gemini_latest", "run_gemini_latest"),
     }
 
     # Build config by importing only requested methods.

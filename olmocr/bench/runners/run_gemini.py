@@ -20,7 +20,7 @@ def run_gemini(
     model: str = "gemini-2.0-flash",
     temperature: float = 0.1,
     target_longest_image_dim: int = 2048,
-    prompt_template: Literal["full", "full_no_document_anchoring", "basic", "finetune"] = "finetune",
+    prompt_template: Literal["full", "full_no_document_anchoring", "basic", "finetune"] = "full_no_document_anchoring",
     response_template: Literal["plain", "json"] = "json",
 ) -> str:
     """

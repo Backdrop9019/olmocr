@@ -1,0 +1,100 @@
+# OlmOCR Finetuning Configuration
+# Based on qwen25_vl_olmocrv4_finetuning.yaml
+# For finetuning already trained olmOCR model with LoRA
+
+project_name: olmocr-own-finetuning
+run_name: olmocr-own-ft-lora
+
+# Model configuration
+model:
+  name: allenai/olmOCR-2-7B-1025
+  trust_remote_code: true
+  torch_dtype: bfloat16
+  use_flash_attention: true
+  attn_implementation: flash_attention_2
+
+  # LoRA settings
+  use_lora: true
+  lora_rank: 32
+  lora_alpha: 16
+  lora_dropout: 0.05
+  lora_target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+
+# Dataset configuration
+dataset:
+  train:
+    - name: labeled_custom_dataset_full
+      root_dir: /home/kyungho/frameworks/data/labeled_custom_dataset_full/
+      pipeline: &basic_pipeline
+        - name: FrontMatterParser
+          front_matter_class: PageResponse
+        - name: FilterOutRotatedDocuments
+        - name: ReformatLatexBoldItalic
+        - name: DatasetTextRuleFilter
+        - name: PDFRenderer
+          target_longest_image_dim: 1288
+        - name: RotationAugmentation
+          probability: 0.02
+        - name: NewYamlFinetuningPromptWithNoAnchoring
+        - name: FrontMatterOutputFormat
+        - name: InstructUserMessages
+          prompt_first: true
+        - name: Tokenizer
+          masking_index: -100
+          end_of_message_token: "<|im_end|>"
+
+  eval:
+    - name: processed_00_documents_eval
+      root_dir: /home/kyungho/frameworks/data/olmOCR-mix-1025/processed_00_documents_eval/
+      pipeline: *basic_pipeline
+
+# Training configuration
+training:
+  output_dir: /home/kyungho/olmocr-qwen3/8b/olmocr-ft
+  num_train_epochs: 1
+
+  # Batch size and accumulation
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  gradient_accumulation_steps: 8
+
+  gradient_checkpointing: true
+
+  collator_max_token_len: 8192
+
+  # Learning rate (lower for finetuning)
+  learning_rate: 1e-5
+  lr_scheduler_type: linear
+  warmup_ratio: 0.1
+
+  # Optimization
+  optim: adamw_torch
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+
+  seed: 300
+  data_seed: 301
+
+  # Evaluation and checkpointing
+  eval_strategy: steps
+  eval_steps: 500
+  save_strategy: steps
+  save_steps: 500
+  save_total_limit: 3
+  load_best_model_at_end: false
+  metric_for_best_model: eval_loss
+  greater_is_better: false
+
+  # Logging
+  logging_steps: 50
+  logging_first_step: true
+
+  report_to:
+    - wandb
