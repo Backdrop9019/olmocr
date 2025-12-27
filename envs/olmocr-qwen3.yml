@@ -1,0 +1,6 @@
+name: olmocr-qwen3
+channels:
+  - defaults
+dependencies:
+  - python=3.11
+prefix: /home/kyungho/miniconda3/envs/olmocr-qwen3

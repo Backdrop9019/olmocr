@@ -1,4 +1,5 @@
 # ml stuff
+*.zip
 korean_bench_pdf
 temp/
 localworkspace*/

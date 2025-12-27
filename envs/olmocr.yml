@@ -1,0 +1,7 @@
+name: olmocr
+channels:
+  - defaults
+dependencies:
+  - python=3.11
+  - git-lfs
+prefix: /home/kyungho/miniconda3/envs/olmocr
