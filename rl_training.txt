@@ -1,0 +1,59 @@
+RL 학습 스텝 (Custom Data)
+Step 1: 환경 준비
+
+# Anthropic API 키 설정 (mine_html_templates.py용)
+export ANTHROPIC_API_KEY="blahblah"
+
+# Playwright 설치 (HTML → PDF 렌더링용)
+pip install playwright
+playwright install chromium
+Step 2: bench_data 생성 (mine_html_templates.py)
+
+python -m olmocr.bench.synth.mine_html_templates \
+  --input_list /home/kyungho/frameworks/data/rl_train_10k/pdf_list.txt \
+  --output_dir /home/kyungho/frameworks/data/rl_train_10k_synth \
+  --name korean \
+  --temp_dir /tmp/synth_temp \
+  --max_tests 10000 \
+  --parallel 12
+생성 결과물:
+
+rl_train_10k_synth/
+├── bench_data/
+│   ├── korean.jsonl          # 테스트 케이스
+│   ├── pdfs/korean/          # 합성 PDF
+│   └── claude_original/korean/  # 참조 마크다운
+├── html/korean/              # 중간 HTML
+└── training/korean/          # 학습용 데이터
+Step 3: GRPO 학습 실행
+
+python -m olmocr.train.grpo_train \
+  --train_bench_data_folder /home/kyungho/frameworks/data/rl_train_10k_synth/bench_data \
+  --model_name Qwen/Qwen2.5-VL-7B-Instruct \
+  --output_dir /home/kyungho/frameworks/olmocr-ft/outputs/grpo_korean \
+  --learning_rate 2e-6 \
+  --per_device_train_batch_size 1 \
+  --gradient_accumulation_steps 28 \
+  --num_train_epochs 1 \
+  --reward_bench 1.0 \
+  --reward_front_matter 1.0 \
+  --reward_eos 1.0 \
+  --num_generations 28 \
+  --beta 0.01 \
+  --vllm_gpu_memory_utilization 0.4
+
+Step 4: (선택) 여러 seed로 학습 후 souping
+
+# Seed 1, 2, 3으로 각각 학습
+for seed in 1 2 3; do
+  python -m olmocr.train.grpo_train \
+    --train_bench_data_folder ... \
+    --seed $seed \
+    --output_dir outputs/grpo_korean_seed${seed}
+done
+
+
+# zero3 weight 벼ㅑㅇ
+./scripts/merge_zero3_checkpoint.sh \
+    outputs/grpo_run_20251228_235710/checkpoint-367 \
+    outputs/my_merged_model

@@ -10,9 +10,9 @@ LoRA adapter를 base 모델에 merge하는 스크립트.
 
 예시:
     python scripts/merge_lora.py \
-        --base_model /home/kyungho/olmocr-qwen3/8b/korean_olmocr \
-        --lora_path /home/kyungho/frameworks/olmocr-ft/outputs/korean_ft_lora_20251219_122847/olmocr_korean_lora_ft/checkpoint-19763 \
-        --output_path /home/kyungho/olmocr-qwen3/8b/korean_olmocr_lora_merged
+        --base_model allenai/olmOCR-2-7B-1025 \
+        --lora_path /home/kyungho/frameworks/olmocr-ft/outputs/korean_lora_multi_20251223_004736/olmocr_korean_lora_ft/checkpoint-24702 \
+        --output_path /home/kyungho/olmocr-qwen3/8b/korean_olmocr_lora_multi_merged
 """
 
 import argparse

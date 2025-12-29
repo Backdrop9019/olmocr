@@ -1012,6 +1012,7 @@ def main():
         report_to=report_to,
         remove_unused_columns=False,
         bf16=True,
+        gradient_checkpointing=True,
         shuffle_dataset=True,
         seed=args.seed,
         dataloader_num_workers=8,
